@@ -12,6 +12,16 @@ test("plugin manifest references real generated paths", () => {
   assert.ok(exists(plugin.lspServers));
 });
 
+test("published package and Copilot plugin manifest versions stay in sync", () => {
+  const pkg = readJson<{ version: string }>("package.json");
+  const lock = readJson<{ version: string; packages?: Record<string, { version?: string }> }>("package-lock.json");
+  const plugin = readJson<{ version: string }>("plugin.json");
+
+  assert.equal(plugin.version, pkg.version);
+  assert.equal(lock.version, pkg.version);
+  assert.equal(lock.packages?.[""]?.version, pkg.version);
+});
+
 test("required top-level files exist", () => {
   for (const file of [
     "README.md",

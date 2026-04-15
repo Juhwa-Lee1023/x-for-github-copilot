@@ -15,8 +15,9 @@ X for GitHub Copilot currently supports GitHub Copilot CLI workflows through a d
 Paste this into your LLM agent session:
 
 ```text
-Install and configure X for GitHub Copilot by following the instructions here:
-https://raw.githubusercontent.com/Juhwa-Lee1023/x-for-github-copilot/refs/heads/main/docs/install.md
+Install and configure X for GitHub Copilot. First fetch the guide with curl, not WebFetch:
+curl -fsSL https://raw.githubusercontent.com/Juhwa-Lee1023/x-for-github-copilot/refs/heads/main/docs/install.md
+Then follow the fetched guide exactly.
 ```
 
 Or run the interactive installer yourself:
@@ -237,11 +238,12 @@ During interactive install, X for GitHub Copilot asks which permission mode shou
 For non-interactive install, X for GitHub Copilot falls back to `ask` unless you pass a mode explicitly. For agent-driven or OMO-style copy-paste install from a plain Copilot TUI, give the agent this short prompt:
 
 ```text
-Install and configure X for GitHub Copilot by following the instructions here:
-https://raw.githubusercontent.com/Juhwa-Lee1023/x-for-github-copilot/refs/heads/main/docs/install.md
+Install and configure X for GitHub Copilot. First fetch the guide with curl, not WebFetch:
+curl -fsSL https://raw.githubusercontent.com/Juhwa-Lee1023/x-for-github-copilot/refs/heads/main/docs/install.md
+Then follow the fetched guide exactly.
 ```
 
-The guide tells the agent to ask for `ask` / `work` / `yolo`, pass that selection through `--permission-mode`, run the installer with `npx --yes`, and verify with `npx --yes x-for-github-copilot doctor` plus a fresh shell. That avoids both npm/npx's hidden package-install confirmation prompt and the installer's permission-mode `read` prompt, either of which can otherwise stall inside Copilot's shell tool.
+The prompt tells the agent to use `curl` before it has a chance to choose WebFetch. The guide then tells the agent to ask for `ask` / `work` / `yolo`, pass that selection through `--permission-mode`, run the installer with `npx --yes`, and verify with `npx --yes x-for-github-copilot doctor` plus a fresh shell. That avoids both npm/npx's hidden package-install confirmation prompt and the installer's permission-mode `read` prompt, either of which can otherwise stall inside Copilot's shell tool.
 
 You can still run the installer directly when you already know the mode:
 

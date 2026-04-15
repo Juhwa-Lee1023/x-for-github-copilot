@@ -1140,6 +1140,7 @@ def collect_event_evidence_text(events, include_prompt_text=True):
     return "\n".join(chunks)
 
 
+TOOL_EXIT_RE = re.compile(r"^\s*<exited with exit code (-?\d+)>\s*$", re.IGNORECASE | re.MULTILINE)
 BARE_TOOL_EXIT_RE = re.compile(r"^\s*<exited with exit code (-?\d+)>\s*$", re.IGNORECASE)
 
 
@@ -1156,18 +1157,29 @@ def is_search_command(command):
 def is_expected_no_match_validation_command(command, description):
     if not is_search_command(command):
         return False
-    context = " ".join(part for part in [description, command] if isinstance(part, str)).lower()
-    if not context:
+    description_text = description.lower() if isinstance(description, str) else ""
+    command_text = command.lower() if isinstance(command, str) else ""
+    if not description_text and not command_text:
         return False
+    strong_no_match_re = (
+        r"\b(no[- ]match|no match|absence|absent|removed|remaining|hardcoded|leftover|forbidden|banned|disallowed|deprecated|stale)\b"
+        r"|\b(?:should|must|does|do)\s+not\s+(?:contain|include|exist|appear|match|remain)\b"
+        r"|\bnot\s+(?:present|found|included|defined|declared)\b"
+    )
+    if re.search(strong_no_match_re, description_text):
+        return True
+    if re.search(r"\bwithout\b", description_text) and re.search(
+        r"\b(validation|validate|check|verify|ensure|assert|confirm|test|required|expected|must|should)\b",
+        description_text,
+    ):
+        return True
     return bool(
         re.search(
-            r"\b(no[- ]match|no match|absence|absent|removed|remaining|hardcoded|leftover|forbidden|banned|disallowed|deprecated|stale)\b"
+            r"\b(no[- ]match|no match|forbidden|banned|disallowed)\b"
             r"|\b(?:should|must|does|do)\s+not\s+(?:contain|include|exist|appear|match|remain)\b"
-            r"|\bnot\s+(?:present|found|included|defined|declared)\b"
-            r"|\bwithout\b",
-            context,
+            r"|\bnot\s+(?:present|found|included|defined|declared)\b",
+            command_text,
         )
-        and not re.search(r"\b(search|find|list|discover|ground|scout|inspect)\b", context)
     )
 
 
@@ -1226,6 +1238,23 @@ def bare_tool_exit_code(values):
         return None
     match = BARE_TOOL_EXIT_RE.match(first)
     return int(match.group(1)) if match else None
+
+
+def tool_exit_code(values):
+    if not isinstance(values, list) or not values:
+        return None
+    exit_codes = []
+    for value in values:
+        if not isinstance(value, str):
+            continue
+        for match in TOOL_EXIT_RE.finditer(value):
+            exit_codes.append(int(match.group(1)))
+    if not exit_codes:
+        return None
+    first = exit_codes[0]
+    if any(exit_code != first for exit_code in exit_codes):
+        return None
+    return first
 
 
 def collect_validation_evidence_text(events, process_log_text=""):
@@ -1314,17 +1343,23 @@ def collect_validation_evidence_text(events, process_log_text=""):
                     ["result", "detailedContent"],
                 ],
             )
-            exit_code = bare_tool_exit_code(values)
+            exit_code = tool_exit_code(values)
             if exit_code is not None:
                 context = tool_context_by_id.get(data.get("toolCallId"), {})
                 command = context.get("command") if isinstance(context, dict) else None
                 description = context.get("description") if isinstance(context, dict) else None
                 label = concise_command_label(command, description)
-                if exit_code == 1 and is_expected_no_match_validation_command(command, description):
-                    chunks.append(f"validation no-match check passed: {label}")
-                    continue
-                if exit_code != 0 and is_search_command(command):
-                    if is_search_validation_command(command, description):
+                if is_search_command(command):
+                    if exit_code == 1 and is_expected_no_match_validation_command(command, description):
+                        chunks.append(f"validation no-match check passed: {label}")
+                        continue
+                    if exit_code == 0 and is_expected_no_match_validation_command(command, description):
+                        chunks.append(f"validation command failed: {label} found matches for an expected no-match check")
+                        continue
+                    if exit_code == 0 and is_search_validation_command(command, description):
+                        chunks.append(f"validation command passed: {label}")
+                        continue
+                    if exit_code != 0 and is_search_validation_command(command, description):
                         chunks.append(f"validation command failed: {label} exited with exit code {exit_code}")
                     continue
                 if is_validation_command(command, description):

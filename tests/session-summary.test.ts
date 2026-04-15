@@ -5081,11 +5081,73 @@ test("session summary finalizer treats expected search no-match checks as valida
   assert.deepEqual(summary.validation_command_failures, []);
 });
 
+test("session summary finalizer treats search phrasing with remaining as no-match validation", (t) => {
+  if (spawnSync("bash", ["-lc", "command -v python3"], { encoding: "utf8" }).status !== 0) {
+    t.skip("python3 unavailable");
+    return;
+  }
+
+  const summary = runSearchValidationFinalizerCase({
+    sessionLabel: "validation-no-match-search-remaining",
+    command:
+      'cd /tmp/workspace && rg -n "<body class=|theme-light|theme-dark" chrome-extension/popup.html chrome-extension/options.html chrome-extension/detail.html',
+    description: "Search for remaining body theme classes",
+    exitCode: 1
+  });
+
+  assert.equal(summary.validation_observed, true);
+  assert.equal(summary.validation_status, "passed");
+  assert.equal(summary.validation_raw_status, "passed");
+  assert.equal(summary.validation_overclaim_observed, false);
+  assert.deepEqual(summary.validation_command_failures, []);
+});
+
+test("session summary finalizer does not infer no-match validation from command pattern text alone", (t) => {
+  if (spawnSync("bash", ["-lc", "command -v python3"], { encoding: "utf8" }).status !== 0) {
+    t.skip("python3 unavailable");
+    return;
+  }
+
+  const summary = runSearchValidationFinalizerCase({
+    sessionLabel: "exploratory-command-pattern-without",
+    command: 'cd /tmp/workspace && rg -n "without" docs',
+    description: "",
+    exitCode: 1,
+    includeLaterValidation: false
+  });
+
+  assert.equal(summary.validation_observed, false);
+  assert.equal(summary.validation_status, "not-observed");
+  assert.deepEqual(summary.validation_command_failures, []);
+});
+
+test("session summary finalizer ignores inline marker-like text when parsing tool exits", (t) => {
+  if (spawnSync("bash", ["-lc", "command -v python3"], { encoding: "utf8" }).status !== 0) {
+    t.skip("python3 unavailable");
+    return;
+  }
+
+  const summary = runSearchValidationFinalizerCase({
+    sessionLabel: "validation-search-inline-marker-text",
+    command: 'cd /tmp/workspace && rg -n "required-marker" src/page.tsx',
+    description: "Verify required markup exists",
+    exitCode: 0,
+    resultContent: "fixture output mentions <exited with exit code 1> inline\n<exited with exit code 0>"
+  });
+
+  assert.equal(summary.validation_observed, true);
+  assert.equal(summary.validation_status, "passed");
+  assert.equal(summary.validation_raw_status, "passed");
+  assert.deepEqual(summary.validation_command_failures, []);
+});
+
 function runSearchValidationFinalizerCase(opts: {
   sessionLabel: string;
   command: string;
   description: string;
   exitCode: number;
+  includeLaterValidation?: boolean;
+  resultContent?: string;
 }) {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), `xgc-session-summary-${opts.sessionLabel}-`));
   const workspaceRoot = path.join(tempRoot, "workspace");
@@ -5108,61 +5170,64 @@ function runSearchValidationFinalizerCase(opts: {
       ""
     ].join("\n")
   );
-  fs.writeFileSync(
-    transcriptPath,
-    [
-      JSON.stringify({ type: "session.start", timestamp: "2026-04-12T00:00:00.000Z" }),
-      JSON.stringify({
-        type: "tool.execution_start",
-        timestamp: "2026-04-12T00:01:00.000Z",
-        data: {
-          toolCallId: "call_search_validation",
-          toolName: "bash",
-          arguments: {
-            command: opts.command,
-            description: opts.description
-          }
+  const searchResultContent = opts.resultContent ?? `\n<exited with exit code ${opts.exitCode}>`;
+  const events = [
+    JSON.stringify({ type: "session.start", timestamp: "2026-04-12T00:00:00.000Z" }),
+    JSON.stringify({
+      type: "tool.execution_start",
+      timestamp: "2026-04-12T00:01:00.000Z",
+      data: {
+        toolCallId: "call_search_validation",
+        toolName: "bash",
+        arguments: {
+          command: opts.command,
+          description: opts.description
         }
-      }),
-      JSON.stringify({
-        type: "tool.execution_complete",
-        timestamp: "2026-04-12T00:01:01.000Z",
-        data: {
-          toolCallId: "call_search_validation",
-          result: {
-            content: `\n<exited with exit code ${opts.exitCode}>`,
-            detailedContent: `\n<exited with exit code ${opts.exitCode}>`
-          }
+      }
+    }),
+    JSON.stringify({
+      type: "tool.execution_complete",
+      timestamp: "2026-04-12T00:01:01.000Z",
+      data: {
+        toolCallId: "call_search_validation",
+        result: {
+          content: searchResultContent,
+          detailedContent: searchResultContent
         }
-      }),
-      JSON.stringify({
-        type: "tool.execution_start",
-        timestamp: "2026-04-12T00:02:00.000Z",
-        data: {
-          toolCallId: "call_validation",
-          toolName: "bash",
-          arguments: {
-            command:
-              "node --check chrome-extension/popup.js && node --check chrome-extension/options.js && node --check chrome-extension/detail.js && git --no-pager diff --check -- chrome-extension/popup.js chrome-extension/options.js chrome-extension/detail.js",
-            description: "Run JS syntax and diff checks"
-          }
-        }
-      }),
-      JSON.stringify({
-        type: "tool.execution_complete",
-        timestamp: "2026-04-12T00:02:01.000Z",
-        data: {
-          toolCallId: "call_validation",
-          result: { content: "\n<exited with exit code 0>", detailedContent: "\n<exited with exit code 0>" }
-        }
-      }),
-      JSON.stringify({
-        type: "assistant.message",
-        timestamp: "2026-04-12T00:03:00.000Z",
-        data: { content: "Execution status: complete" }
-      })
-    ].join("\n") + "\n"
-  );
+      }
+    }),
+    ...(opts.includeLaterValidation === false
+      ? []
+      : [
+          JSON.stringify({
+            type: "tool.execution_start",
+            timestamp: "2026-04-12T00:02:00.000Z",
+            data: {
+              toolCallId: "call_validation",
+              toolName: "bash",
+              arguments: {
+                command:
+                  "node --check chrome-extension/popup.js && node --check chrome-extension/options.js && node --check chrome-extension/detail.js && git --no-pager diff --check -- chrome-extension/popup.js chrome-extension/options.js chrome-extension/detail.js",
+                description: "Run JS syntax and diff checks"
+              }
+            }
+          }),
+          JSON.stringify({
+            type: "tool.execution_complete",
+            timestamp: "2026-04-12T00:02:01.000Z",
+            data: {
+              toolCallId: "call_validation",
+              result: { content: "\n<exited with exit code 0>", detailedContent: "\n<exited with exit code 0>" }
+            }
+          })
+        ]),
+    JSON.stringify({
+      type: "assistant.message",
+      timestamp: "2026-04-12T00:03:00.000Z",
+      data: { content: "Execution status: complete" }
+    })
+  ];
+  fs.writeFileSync(transcriptPath, events.join("\n") + "\n");
 
   const result = spawnSync("python3", [path.join(repoRoot, "scripts/hooks/finalize-session-summary.py"), "agentStop"], {
     encoding: "utf8",
@@ -5222,6 +5287,71 @@ test("session summary finalizer reports validation search command errors", (t) =
   assert.equal(summary.validation_raw_status, "failed");
   assert.equal(summary.validation_overclaim_observed, true);
   assert.match((summary.validation_command_failures as string[]).join("\n"), /exit code 2/);
+});
+
+test("session summary finalizer fails expected no-match searches that find matches", (t) => {
+  if (spawnSync("bash", ["-lc", "command -v python3"], { encoding: "utf8" }).status !== 0) {
+    t.skip("python3 unavailable");
+    return;
+  }
+
+  const summary = runSearchValidationFinalizerCase({
+    sessionLabel: "validation-no-match-found",
+    command:
+      'cd /tmp/workspace && rg -n "<body class=|theme-light|theme-dark" chrome-extension/popup.html chrome-extension/options.html chrome-extension/detail.html',
+    description: "Check removed body theme classes",
+    exitCode: 0
+  });
+
+  assert.equal(summary.validation_observed, true);
+  assert.equal(summary.validation_status, "failed");
+  assert.equal(summary.validation_raw_status, "failed");
+  assert.equal(summary.validation_overclaim_observed, true);
+  assert.match((summary.validation_command_failures as string[]).join("\n"), /expected no-match/i);
+});
+
+test("session summary finalizer ignores exploratory search misses before later validation", (t) => {
+  if (spawnSync("bash", ["-lc", "command -v python3"], { encoding: "utf8" }).status !== 0) {
+    t.skip("python3 unavailable");
+    return;
+  }
+
+  const summary = runSearchValidationFinalizerCase({
+    sessionLabel: "exploratory-search-miss",
+    command:
+      'cd /tmp/workspace && rg -n "from [\'\\\"](\\.\\./)?\\.\\./packages|from [\'\\\"]@|require\\([\'\\\"](\\.\\./)?\\.\\./packages|import .*packages" chrome-extension',
+    description: "Find extension imports from shared packages",
+    exitCode: 1
+  });
+
+  assert.equal(summary.validation_observed, true);
+  assert.equal(summary.validation_status, "passed");
+  assert.equal(summary.validation_raw_status, "passed");
+  assert.equal(summary.validation_overclaim_observed, false);
+  assert.deepEqual(summary.validation_command_failures, []);
+  assert.deepEqual(summary.validation_recovered_command_failures, []);
+});
+
+test("session summary finalizer ignores exploratory search command errors before later validation", (t) => {
+  if (spawnSync("bash", ["-lc", "command -v python3"], { encoding: "utf8" }).status !== 0) {
+    t.skip("python3 unavailable");
+    return;
+  }
+
+  const summary = runSearchValidationFinalizerCase({
+    sessionLabel: "exploratory-search-usage-error",
+    command:
+      'cd /tmp/workspace && rg -n "theme|dark|light|color-scheme|prefers-color-scheme|storage|chrome\\.storage" chrome-extension/*.ts packages/shared/src/*.ts',
+    description: "Search TS for theme/storage refs",
+    exitCode: 2
+  });
+
+  assert.equal(summary.validation_observed, true);
+  assert.equal(summary.validation_status, "passed");
+  assert.equal(summary.validation_raw_status, "passed");
+  assert.equal(summary.validation_overclaim_observed, false);
+  assert.deepEqual(summary.validation_command_failures, []);
+  assert.deepEqual(summary.validation_recovered_command_failures, []);
 });
 
 test("session summary finalizer lets repo-owned validation logs recover earlier raw failures", (t) => {

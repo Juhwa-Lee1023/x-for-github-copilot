@@ -86,6 +86,7 @@ const releaseManifest = {
   autoUpdateMode: args.autoUpdateMode,
   publishedAt: args.publishedAt,
   installCommand: "npx x-for-github-copilot install",
+  agentInstallCommand: "npx --yes x-for-github-copilot install --permission-mode <mode> --reasoning-effort xhigh --reasoning-effort-cap high",
   bunInstallCommand: "bunx x-for-github-copilot install",
   tarballUrl: `https://github.com/${args.repo}/releases/download/${args.tag}/${packageTarballName}`,
   sourceTarballUrl: `https://github.com/${args.repo}/archive/refs/tags/${args.tag}.tar.gz`,

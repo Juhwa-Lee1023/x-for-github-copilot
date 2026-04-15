@@ -17,8 +17,9 @@ X for GitHub Copilot is currently designed for **GitHub Copilot CLI** workflows.
 Paste this into your LLM agent session:
 
 ```text
-Install and configure X for GitHub Copilot by following the instructions here:
-https://raw.githubusercontent.com/Juhwa-Lee1023/x-for-github-copilot/refs/heads/main/docs/install.md
+Install and configure X for GitHub Copilot. First fetch the guide with curl, not WebFetch:
+curl -fsSL https://raw.githubusercontent.com/Juhwa-Lee1023/x-for-github-copilot/refs/heads/main/docs/install.md
+Then follow the fetched guide exactly.
 ```
 
 Or read the [installation guide](docs/install.md), but the recommended path is to let an agent do it. Installation touches Copilot profile and shell startup files; agents are better at copying exact flags and verifying fresh-shell behavior.

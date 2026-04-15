@@ -15,6 +15,12 @@ const markdownFiles = [
   "KNOWN_RISKS.md"
 ];
 
+const agentInstallPrompt = [
+  "Install and configure X for GitHub Copilot. First fetch the guide with curl, not WebFetch:",
+  "curl -fsSL https://raw.githubusercontent.com/Juhwa-Lee1023/x-for-github-copilot/refs/heads/main/docs/install.md",
+  "Then follow the fetched guide exactly."
+].join("\n");
+
 test("README stays concise while preserving install, support, and lineage boundaries", () => {
   const readme = readText("README.md");
   assert.match(readme, /^# X for GitHub Copilot/m);
@@ -32,7 +38,7 @@ test("README stays concise while preserving install, support, and lineage bounda
   assert.match(readme, /explicit\s*\/\s*strong-indirect\s*\/\s*weak\s*\/\s*unproven|explicit.*strong-indirect.*weak.*unproven/i);
   assert.match(readme, /does not promise universal premium-request reduction/i);
   assert.match(readme, /Planning-first orchestration, specialist work lanes, integration governance, and runtime truth for GitHub Copilot CLI/i);
-  assert.match(readme, /Install and configure X for GitHub Copilot by following the instructions here/i);
+  assert.ok(readme.includes(agentInstallPrompt));
   assert.match(readme, /https:\/\/raw\.githubusercontent\.com\/Juhwa-Lee1023\/x-for-github-copilot\/refs\/heads\/main\/docs\/install\.md/i);
   assert.match(readme, /use `curl` to fetch the installation guide, not WebFetch/i);
   assert.match(readme, /ask the user which default permission mode to persist/i);
@@ -51,6 +57,17 @@ test("README stays concise while preserving install, support, and lineage bounda
   assert.doesNotMatch(readme, /Formerly `sisyphus`/);
   assert.doesNotMatch(readme, /Formerly `librarian`/);
   assert.doesNotMatch(readme, /`repo-master` was `sisyphus`/);
+});
+
+test("agent install prompt stays synchronized across human and agent setup docs", () => {
+  const readme = readText("README.md");
+  const install = readText("docs/install.md");
+  const setupForAgents = readText("docs/setup-for-agents.md");
+
+  assert.ok(readme.includes(agentInstallPrompt));
+  assert.equal((install.match(new RegExp(escapeRegex(agentInstallPrompt), "g")) ?? []).length, 2);
+  assert.match(setupForAgents, /Fetch the user install guide with `curl`, not WebFetch/i);
+  assert.match(setupForAgents, /npx --yes x-for-github-copilot install --permission-mode <mode> --reasoning-effort xhigh --reasoning-effort-cap high/i);
 });
 
 test("primary product docs do not teach intermediate or legacy runtime-facing names", () => {

@@ -42,6 +42,8 @@ async function main() {
   await syncRuntimeSurfaces(repoRoot, { check: true });
 
   const plugin = readJson<Record<string, string>>("plugin.json");
+  const pkg = readJson<{ version?: string }>("package.json");
+  assert(plugin.version === pkg.version, "plugin.json version must match package.json version");
   for (const key of ["agents", "skills", "hooks", "mcpServers", "lspServers"]) {
     const target = plugin[key];
     assert(Boolean(target), `plugin.json must define ${key}`);

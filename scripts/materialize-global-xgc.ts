@@ -61,6 +61,12 @@ function parseArgs(argv: string[]) {
       }
       args.reasoningEffort = effort;
       index += 1;
+    } else if (current.startsWith("--reasoning-effort=") || current.startsWith("--effort=")) {
+      const effort = current.split("=", 2)[1] ?? "";
+      if (!isXgcReasoningEffort(effort)) {
+        throw new Error(`Invalid --reasoning-effort: ${effort}. Expected low, medium, high, xhigh, or off.`);
+      }
+      args.reasoningEffort = effort;
     } else if ((current === "--reasoning-effort-cap" || current === "--effort-cap") && argv[index + 1]) {
       const cap = argv[index + 1];
       if (!isXgcReasoningEffortCap(cap)) {
