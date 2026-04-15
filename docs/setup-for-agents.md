@@ -1,6 +1,14 @@
 # Setup For Coding Agents
 
-If you are a coding agent bootstrapping this repository, use this exact sequence:
+If you are installing X for GitHub Copilot for a user, do not start with this repo-checkout script. Fetch the user install guide and follow its LLM-agent section:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Juhwa-Lee1023/x-for-github-copilot/refs/heads/main/docs/install.md
+```
+
+Ask the user for `ask`, `work`, or `yolo`, then use `npx x-for-github-copilot install --permission-mode <mode>` and verify with a fresh shell.
+
+If you are a coding agent bootstrapping this repository checkout for development, use this exact sequence:
 
 ```bash
 bash scripts/setup-copilot-cli.sh

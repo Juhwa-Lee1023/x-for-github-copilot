@@ -14,22 +14,44 @@ X for GitHub Copilot is currently designed for **GitHub Copilot CLI** workflows.
 
 ### For Humans
 
-Copy and paste this prompt into your current coding agent:
+Paste this into your LLM agent session:
 
 ```text
-Install and configure X for GitHub Copilot by following the installation guide in https://github.com/Juhwa-Lee1023/x-for-github-copilot/blob/main/docs/install.md. Ask me which default permission mode to persist (`ask`, `work`, or `yolo`), then run `npx x-for-github-copilot install --permission-mode <my selection>`. After installation, verify in a fresh interactive shell that `type copilot` resolves to the X for GitHub Copilot shim, `copilot plugin list` shows `xgc`, and `npx x-for-github-copilot doctor` passes. Then explain exactly how I start using it from a new shell: open a new terminal or run `exec zsh`, use plain `copilot` as the default front door, use `copilot_raw` to bypass XGC, and use `xgc_mode ask|work|yolo` to change the current shell mode. Report the exact commands, exit codes, validation results, and the short post-install usage notes.
+Install and configure X for GitHub Copilot by following the instructions here:
+https://raw.githubusercontent.com/Juhwa-Lee1023/x-for-github-copilot/refs/heads/main/docs/install.md
 ```
 
-Or read the [installation guide](docs/install.md), but the recommended path is to let your coding agent do the setup and verification.
+Or read the [installation guide](docs/install.md), but the recommended path is to let an agent do it. Installation touches Copilot profile and shell startup files; agents are better at copying exact flags and verifying fresh-shell behavior.
+
+Manual install:
+
+```bash
+npx x-for-github-copilot install
+```
+
+Bun equivalent:
+
+```bash
+bunx x-for-github-copilot install
+```
 
 ### For LLM Agents
 
-Read the installation guide and follow it:
+Important: use `curl` to fetch the installation guide, not WebFetch. WebFetch can summarize away required flags and verification steps.
 
-- [docs/install.md](docs/install.md)
-- [docs/usage.md](docs/usage.md)
+```bash
+curl -fsSL https://raw.githubusercontent.com/Juhwa-Lee1023/x-for-github-copilot/refs/heads/main/docs/install.md
+```
 
-Prefer `npx x-for-github-copilot install` as the primary install path, keep `bunx x-for-github-copilot install` as the Bun equivalent, preserve the user's selected permission mode, and verify with `npx x-for-github-copilot doctor` before claiming success.
+Then follow the guide exactly:
+
+- ask the user which default permission mode to persist: `ask`, `work`, or `yolo`
+- run `npx x-for-github-copilot install --permission-mode <mode>`
+- verify with `npx x-for-github-copilot doctor`, then a fresh interactive shell
+- explain how to start: open a new terminal and run plain `copilot`
+- mention `copilot_raw` for bypassing XGC and `xgc_mode ask|work|yolo` for changing the current shell mode
+
+You do not need to call subagents with slash commands. Plain `copilot` is the intended front door; XGC handles routing from there.
 
 ## Why This Exists
 
