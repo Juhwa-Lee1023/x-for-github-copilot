@@ -42,16 +42,21 @@ jobs:
       - name: Ensure generated runtime-dist is committed
         run: git diff --exit-code -- runtime-dist
 
-      - name: Ensure npm version is not already published
+      - name: Check npm publication status
+        id: npm_status
         run: |
           PACKAGE_VERSION="$(node -p "require('./package.json').version")"
           if npm view "x-for-github-copilot@${PACKAGE_VERSION}" version >/dev/null 2>&1; then
-            echo "x-for-github-copilot@${PACKAGE_VERSION} is already published" >&2
-            exit 1
+            echo "already_published=true" >> "$GITHUB_OUTPUT"
+            echo "x-for-github-copilot@${PACKAGE_VERSION} is already published; skipping npm publish on rerun."
+          else
+            echo "already_published=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Pack npm distribution
-        run: npm pack --pack-destination release-assets
+        run: |
+          mkdir -p release-assets
+          npm pack --pack-destination release-assets
 
       - name: Generate release metadata
         run: |
@@ -66,6 +71,7 @@ jobs:
             --npm-package-sha256 "$PACKAGE_SHA"
 
       - name: Publish npm package
+        if: steps.npm_status.outputs.already_published != 'true'
         run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

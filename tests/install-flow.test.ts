@@ -174,6 +174,14 @@ test("xgc doctor dispatches to compiled runtime-dist validator", () => {
 
 test("packaged xgc install completes without invoking npm", () => {
   const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "xgc-packaged-install-home-"));
+  const tempPackRoot = fs.mkdtempSync(path.join(os.tmpdir(), "xgc-packaged-install-package-"));
+  const packOutput = execFileSync("npm", ["pack", "--pack-destination", tempPackRoot], {
+    cwd: repoRoot,
+    encoding: "utf8"
+  }).trim();
+  const packageTgz = path.join(tempPackRoot, packOutput.split(/\r?\n/).at(-1) ?? "");
+  execFileSync("tar", ["-xzf", packageTgz, "-C", tempPackRoot]);
+  const packageRoot = path.join(tempPackRoot, "package");
   const tempBin = path.join(tempHome, "bin");
   const copilotLog = path.join(tempHome, "copilot.log");
   fs.writeFileSync(path.join(tempHome, ".bash_profile"), `export PATH=${tempBin}:$PATH\n`);
@@ -218,7 +226,7 @@ test("packaged xgc install completes without invoking npm", () => {
   const result = spawnSync(
     "node",
     [
-      path.join(repoRoot, "bin", "xgc.mjs"),
+      path.join(packageRoot, "bin", "xgc.mjs"),
       "install",
       "--home-dir",
       tempHome,
@@ -228,7 +236,7 @@ test("packaged xgc install completes without invoking npm", () => {
       "--validate-runtime"
     ],
     {
-      cwd: repoRoot,
+      cwd: packageRoot,
       encoding: "utf8",
       env: {
         ...process.env,
@@ -321,6 +329,10 @@ test("release workflow publishes the npm package and guards tag/package/runtime 
   assert.match(workflow, /Verify tag matches package version/);
   assert.match(workflow, /Run validation/);
   assert.match(workflow, /git diff --exit-code -- runtime-dist/);
+  assert.match(workflow, /Check npm publication status/);
+  assert.match(workflow, /already_published=true/);
+  assert.match(workflow, /mkdir -p release-assets/);
+  assert.match(workflow, /if: steps\.npm_status\.outputs\.already_published != 'true'/);
   assert.match(workflow, /npm publish --provenance --access public/);
   assert.match(workflow, /NODE_AUTH_TOKEN/);
 });
