@@ -1785,7 +1785,7 @@ export function summarizeValidationLog(text: string): ValidationLogSummary {
   const lastFailureIndex = Math.max(-1, ...failureSignals.map((entry) => entry.index));
   const lastStrongPassIndex = Math.max(-1, ...strongPassSignals.map((entry) => entry.index));
   const hardFailureObserved = failureSignals.some((entry) =>
-    /\b(\d+\s+failed\b|strict mode violation|locator resolved to|AssertionError)\b/i.test(entry.line)
+    /\b(\d+\s+failed\b|strict mode violation|locator resolved to|AssertionError|validation command failed)\b/i.test(entry.line)
   );
   const hardRecoveryObserved = strongPassSignals.some(
     (entry) =>

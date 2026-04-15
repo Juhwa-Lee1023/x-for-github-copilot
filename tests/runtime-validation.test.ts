@@ -883,6 +883,21 @@ test("summarizeValidationLog treats expected search no-match probes as validatio
   assert.deepEqual(summary.validationCommandFailures, []);
 });
 
+test("summarizeValidationLog does not recover validation command failures from unrelated later passes", () => {
+  const summary = summarizeValidationLog(
+    [
+      "validation command failed: Verify required markup exists exited with exit code 1",
+      "validation command passed: Run JS syntax and diff checks"
+    ].join("\n")
+  );
+
+  assert.equal(summary.validationObserved, true);
+  assert.equal(summary.validationStatus, "failed");
+  assert.equal(summary.validationRawStatus, "failed");
+  assert.equal(summary.validationOverclaimObserved, true);
+  assert.match(summary.validationCommandFailures.join("\n"), /Verify required markup exists/);
+});
+
 test("summarizeRouteObservations reports direct handling and grounding order conservatively", () => {
   const processLog = [
     '2026-04-07T12:53:08.642Z [INFO] Custom agent "Patch Master" invoked with prompt: ...',

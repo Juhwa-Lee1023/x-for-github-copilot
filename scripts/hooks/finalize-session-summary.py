@@ -1160,8 +1160,38 @@ def is_expected_no_match_validation_command(command, description):
     if not context:
         return False
     return bool(
-        re.search(r"\b(check|verify|ensure|assert|confirm|removed|remaining|hardcoded|leftover|no-match|no match)\b", context)
+        re.search(
+            r"\b(no[- ]match|no match|absence|absent|removed|remaining|hardcoded|leftover|forbidden|banned|disallowed|deprecated|stale)\b"
+            r"|\b(?:should|must|does|do)\s+not\s+(?:contain|include|exist|appear|match|remain)\b"
+            r"|\bnot\s+(?:present|found|included|defined|declared)\b"
+            r"|\bwithout\b",
+            context,
+        )
         and not re.search(r"\b(search|find|list|discover|ground|scout|inspect)\b", context)
+    )
+
+
+def is_search_validation_command(command, description):
+    if not is_search_command(command):
+        return False
+    if is_expected_no_match_validation_command(command, description):
+        return True
+    context = " ".join(part for part in [description, command] if isinstance(part, str)).lower()
+    if not context:
+        return False
+    description_text = description.lower() if isinstance(description, str) else ""
+    exploratory_description = re.search(r"\b(search|find|list|discover|ground|scout|inspect)\b", description_text)
+    validation_description = re.search(
+        r"\b(validation|validate|check|verify|ensure|assert|confirm|test|required|exists?|present|expected|must|should)\b",
+        description_text,
+    )
+    if exploratory_description and not validation_description:
+        return False
+    return bool(
+        re.search(
+            r"\b(validation|validate|check|verify|ensure|assert|confirm|test|required|exists?|present|expected|must|should)\b",
+            context,
+        )
     )
 
 
@@ -1294,6 +1324,8 @@ def collect_validation_evidence_text(events, process_log_text=""):
                     chunks.append(f"validation no-match check passed: {label}")
                     continue
                 if exit_code != 0 and is_search_command(command):
+                    if is_search_validation_command(command, description):
+                        chunks.append(f"validation command failed: {label} exited with exit code {exit_code}")
                     continue
                 if is_validation_command(command, description):
                     if exit_code == 0:
@@ -2934,7 +2966,11 @@ def summarize_validation_status(text):
     last_failure_index = max([signal["index"] for signal in failure_signals], default=-1)
     last_strong_pass_index = max([signal["index"] for signal in strong_pass_signals], default=-1)
     hard_failure_observed = any(
-        re.search(r"\b(\d+\s+failed\b|strict mode violation|locator resolved to|AssertionError)\b", signal["line"], re.IGNORECASE)
+        re.search(
+            r"\b(\d+\s+failed\b|strict mode violation|locator resolved to|AssertionError|validation command failed)\b",
+            signal["line"],
+            re.IGNORECASE,
+        )
         for signal in failure_signals
     )
     hard_recovery_observed = any(
