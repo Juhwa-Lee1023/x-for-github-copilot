@@ -1,0 +1,52 @@
+{
+  "lspServers": {
+    "typescript-language-server": {
+      "command": "typescript-language-server",
+      "args": [
+        "--stdio"
+      ],
+      "fileExtensions": {
+        ".ts": "typescript-language-server",
+        ".tsx": "typescript-language-server",
+        ".js": "typescript-language-server",
+        ".jsx": "typescript-language-server",
+        ".mjs": "typescript-language-server",
+        ".cjs": "typescript-language-server",
+        ".mts": "typescript-language-server",
+        ".cts": "typescript-language-server"
+      }
+    },
+    "vscode-json-language-server": {
+      "command": "vscode-json-language-server",
+      "args": [
+        "--stdio"
+      ],
+      "fileExtensions": {
+        ".json": "vscode-json-language-server",
+        ".jsonc": "vscode-json-language-server"
+      }
+    },
+    "yaml-language-server": {
+      "command": "yaml-language-server",
+      "args": [
+        "--stdio"
+      ],
+      "fileExtensions": {
+        ".yaml": "yaml-language-server",
+        ".yml": "yaml-language-server"
+      }
+    },
+    "bash-language-server": {
+      "command": "bash-language-server",
+      "args": [
+        "start"
+      ],
+      "fileExtensions": {
+        ".sh": "bash-language-server",
+        ".bash": "bash-language-server",
+        ".zsh": "bash-language-server",
+        ".ksh": "bash-language-server"
+      }
+    }
+  }
+}

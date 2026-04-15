@@ -1,0 +1,338 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readText } from "./helpers.js";
+import {
+  GROUNDING_MODELS,
+  MIN_VALIDATED_SCOUT_WAVE_SIZE
+} from "../scripts/lib/runtime-routing-policy.js";
+
+function hasExactModelLine(content: string, model: string) {
+  return content.split(/\r?\n/).some((line) => line.trim() === `model: ${model}`);
+}
+
+test("repo master is an orchestration-first front door", () => {
+  const content = readText("source/agents/repo-master.agent.md");
+  assert.doesNotMatch(content, /^model:/m);
+  assert.match(content, /^modelPolicy: root-selected$/m);
+  assert.match(content, /You are a router and orchestrator/i);
+  assert.match(content, /front door, not the permanent owner/i);
+  assert.doesNotMatch(content, /cheap entry meter/i);
+  assert.doesNotMatch(content, /`simple-question`/);
+  assert.doesNotMatch(content, /`cheap-grounding-needed`/);
+  assert.doesNotMatch(content, /`planning-needed`/);
+  assert.doesNotMatch(content, /`real-execution-needed`/);
+  assert.doesNotMatch(content, /structure-analysis hard rule/i);
+  assert.match(content, /Route to \*\*Milestone\*\* before execution/);
+  assert.match(content, /cold-start/i);
+  assert.match(content, /weakly grounded/i);
+  assert.match(content, /multi-file or cross-layer/i);
+  assert.match(content, /acceptance criteria are unclear/i);
+  assert.match(content, /technical direction is not yet fixed/i);
+  assert.match(content, /Do not normalize `Repo Master -> Patch Master`/);
+  assert.match(content, /Large product-build stress guardrails/i);
+  assert.match(content, /do not implement directly in the Repo Master lane/i);
+  assert.match(content, /blocking planner lane rather than an unbounded background job/i);
+  assert.match(content, /foreground or immediately-consumable planner delegation/i);
+  assert.match(content, /call `read_agent` directly/i);
+  assert.match(content, /do not invoke \*\*General Purpose Agent\*\* as a `read_agent` proxy/i);
+  assert.match(content, /do not ask any helper to return the full result verbatim/i);
+  assert.match(content, /visible completion preview/i);
+  assert.match(content, /specialistFanoutPlan/i);
+  assert.match(content, /fresh empty product workspaces/i);
+  assert.match(content, /do not require a Triage pass/i);
+  assert.match(content, /do not make Triage mandatory/i);
+  assert.match(content, /Triage skipped: fresh empty scaffold with concrete execution packet/i);
+  assert.match(content, /do not keep the TUI in a silent wait/i);
+  assert.match(content, /Patch Master pass returns no implementation/i);
+  assert.match(content, /root-level scaffold commands/i);
+  assert.match(content, /pre-existing `\.xgc\/` directory as product code/i);
+  assert.match(content, /cap dependency\/version exploration/i);
+  assert.match(content, /Reuse completed planning reviews/i);
+  assert.match(content, /do not call \*\*Triage\*\* again by default/i);
+  assert.match(content, /call Triage again only if new facts appeared/i);
+  assert.match(content, /single Triage pass for the current effective plan cycle/i);
+  assert.match(content, /Post-execution closure/i);
+  assert.match(content, /After \*\*Patch Master\*\* completes/i);
+  assert.match(content, /if the runtime exposes `read_agent`, use it/i);
+  assert.match(content, /if `read_agent` is unavailable/i);
+  assert.match(content, /planner results as well as execution results/i);
+  assert.match(content, /result-read gap/i);
+  assert.match(content, /do not reopen broad file review or broad repo validation/i);
+  assert.match(content, /run at most one narrowly scoped validation\/read batch/i);
+  assert.match(content, /Patch Master produced no meaningful app\/code artifact/i);
+  assert.match(content, /do not reopen \*\*Repo Scout\*\*, \*\*Ref Index\*\*, \*\*Milestone\*\*, or \*\*Triage\*\* after execution has started/i);
+  assert.match(content, /second Triage call in the same effective plan cycle as a routing regression/i);
+  assert.match(content, /then produce the final user answer and stop/i);
+  assert.match(content, /not the mandatory reviewer/i);
+  assert.match(content, /do not open \*\*Required Check\*\* for ordinary low-risk work by default/i);
+  assert.match(content, /do use \*\*Triage\*\* when a non-trivial plan/i);
+  assert.match(content, /invoke the named X for GitHub Copilot specialist explicitly/i);
+  assert.match(content, /use \*\*Repo Scout\*\*, \*\*Ref Index\*\*, \*\*Milestone\*\*, \*\*Triage\*\*, \*\*Patch Master\*\*, \*\*Required Check\*\*, \*\*Merge Gate\*\*, \*\*Visual Forge\*\*, \*\*Writing Desk\*\*, \*\*Multimodal Look\*\*, or \*\*Artistry Studio\*\* by exact name/i);
+  assert.match(content, /do not substitute built-in generic helpers such as `explore`, `research`, or `general-purpose`/i);
+  assert.match(content, /integration-class/i);
+  assert.match(content, /Shared-surface owner:/i);
+  assert.match(content, /Foundation readiness:/i);
+  assert.match(content, /Foundation recovery suggested:/i);
+  assert.match(content, /\/tasks/i);
+  assert.match(content, /Execution status: incomplete/i);
+  assert.match(content, /committed repo changes as real work/i);
+  assert.match(content, /`Explore Agent` or `General Purpose Agent`/i);
+  assert.match(content, /Visual Forge/);
+  assert.match(content, /Writing Desk/);
+  assert.match(content, /Multimodal Look/);
+  assert.match(content, /Artistry Studio/);
+});
+
+test("milestone is planner-only and grounds before asking", () => {
+  const content = readText("source/agents/milestone.agent.md");
+  assert.match(content, /planner-only/i);
+  assert.match(content, /You are not an implementer/i);
+  assert.match(content, /do not perform production code changes/i);
+  assert.match(content, /reinterpret that as:\s*"create the execution-ready work plan/i);
+  assert.match(content, /do not inflate it into a large planning document/i);
+  assert.match(content, /launch a small, bounded \*\*Repo Scout\*\* wave/i);
+  assert.match(content, /widen only when cold-start ambiguity remains/i);
+  assert.match(content, /front-door grounding packet may already exist/i);
+  assert.match(content, /use \*\*Ref Index\*\* when docs, config, specs, or setup context are heavy/i);
+  assert.match(content, /use \*\*Visual Forge\*\*, \*\*Writing Desk\*\*, \*\*Multimodal Look\*\*, or \*\*Artistry Studio\*\*/i);
+  assert.match(content, /always include `specialistFanoutPlan:`/i);
+  assert.match(content, /coveredByPatchMasterAllowed/i);
+  assert.match(content, /Multimodal Look required only when real visual\/PDF\/image\/diagram analysis/i);
+  assert.match(content, /invoke \*\*Repo Scout\*\*, \*\*Ref Index\*\*, \*\*Triage\*\*, \*\*Visual Forge\*\*, \*\*Writing Desk\*\*, \*\*Multimodal Look\*\*, or \*\*Artistry Studio\*\* by exact name/i);
+  assert.match(content, /do not substitute built-in generic helpers such as `explore`, `research`, `general-purpose`, or unnamed generic task agents/i);
+  assert.match(content, /do the bounded `read`\/`search` yourself instead of falling back to a generic helper/i);
+  assert.match(content, /Before finalizing a non-trivial or medium\/high-risk plan, call \*\*Triage\*\*/i);
+  assert.match(content, /Do not use Triage when the task is trivial/i);
+  assert.match(content, /Do not use Triage for a fresh empty product-build scaffold/i);
+  assert.match(content, /Triage skipped: fresh empty scaffold with concrete execution packet/i);
+  assert.match(content, /one-pass review for the current effective plan cycle/i);
+  assert.match(content, /After \*\*Triage\*\* returns, close the planning loop/i);
+  assert.match(content, /second broad Triage pass unless a new blocker or changed acceptance criterion is recorded/i);
+  assert.match(content, /at most one narrowly scoped verification batch/i);
+  assert.match(content, /Do not call a generic `explore` subagent after Triage/i);
+  assert.match(content, /Do not swap in built-in generic helpers such as `research` or `general-purpose` either/i);
+  assert.match(content, /Do not ask any helper or subagent to return complete raw file contents/i);
+  assert.match(content, /Integration-class/i);
+  assert.match(content, /Foundation readiness:/i);
+  assert.match(content, /Foundation recovery suggested:/i);
+  assert.match(content, /same foundation failure class repeats/i);
+  assert.match(content, /Shared-surface owner:/i);
+  assert.match(content, /Execution owner: Patch Master/i);
+  assert.match(content, /explicit blocker\/recovery rules/i);
+  assert.match(content, /Commit\/working-tree accounting expectations/i);
+  assert.match(content, /generic helpers such as `Explore Agent` or `General Purpose Agent` should not reopen execution/i);
+  assert.match(content, /raw full-file dump requests/i);
+  assert.match(content, /multi-file verbatim content collection/i);
+  assert.match(content, /Execution-ready handoff for Patch Master/i);
+  assert.match(content, /Blocked before execution/i);
+  assert.match(content, /Fresh empty product-build fast path/i);
+  assert.match(content, /compact enough for Repo Master to consume without a secondary reader/i);
+  assert.match(content, /do not produce a full-result blob/i);
+  assert.match(content, /one compact execution packet/i);
+  assert.match(content, /overrides the fuller plan artifact contract/i);
+  assert.match(content, /120 lines or less/i);
+  assert.match(content, /`--disable-git`/);
+  assert.match(content, /`rsync --exclude node_modules --exclude \.git`/);
+  assert.match(content, /planner result unavailable/i);
+  assert.match(content, /Once Patch Master has accepted the handoff, treat planning ownership as closed/i);
+  assert.match(content, /call \*\*Required Check\*\*/i);
+  assert.match(content, /Candidate files/);
+  assert.match(content, /Acceptance criteria/);
+  assert.match(content, /Verification or QA scenarios/);
+  assert.match(content, /Must-not-do notes/);
+});
+
+test("repo scout and ref index remain bounded grounding lanes", () => {
+  const scout = readText("source/agents/repo-scout.agent.md");
+  const refIndex = readText("source/agents/ref-index.agent.md");
+
+  assert.ok(GROUNDING_MODELS.some((model) => hasExactModelLine(scout, model)));
+  assert.ok(GROUNDING_MODELS.some((model) => hasExactModelLine(refIndex, model)));
+  assert.match(scout, /bounded discovery lane/i);
+  assert.match(scout, /If you are part of a cold-start scout wave/i);
+  assert.match(scout, /invoke \*\*Repo Scout\*\* explicitly by name/i);
+  assert.match(refIndex, /reference-compression lane/i);
+  assert.match(refIndex, /pre-execution grounding or one narrow blocker-oriented reference check/i);
+  assert.match(refIndex, /Do not become a reflexive post-execution reopen/i);
+  assert.match(refIndex, /\/tasks/i);
+  assert.match(refIndex, /background progress proxy/i);
+  assert.match(refIndex, /Expect to be invoked explicitly as \*\*Ref Index\*\*/i);
+  assert.match(refIndex, /Do not treat built-in generic helpers such as `explore`, `research`, or `general-purpose` as interchangeable/i);
+  assert.doesNotMatch(scout, /Expect the caller to start with \*\*4\*\* cheap scouts/i);
+  assert.doesNotMatch(refIndex, /before premium escalation/i);
+});
+
+test("triage is bounded conditional gap analysis and required check is bounded", () => {
+  const triage = readText("source/agents/triage.agent.md");
+  const requiredCheck = readText("source/agents/required-check.agent.md");
+
+  assert.match(triage, /pre-plan gap analyzer/i);
+  assert.match(triage, /not every task needs Triage/i);
+  assert.match(triage, /Use Triage when:/i);
+  assert.match(triage, /Do not use Triage when:/i);
+  assert.match(triage, /bounded review pass, not an ongoing collaborator/i);
+  assert.match(triage, /normally appear once per effective plan cycle/i);
+  assert.match(triage, /Stay bounded/i);
+  assert.match(triage, /at most one narrow read\/search batch/i);
+  assert.match(triage, /no raw full-file dump requests/i);
+  assert.match(triage, /no generic `explore` subagent handoff/i);
+  assert.match(triage, /Verdict: `READY_WITH_NOTES` or `NOT_READY`/i);
+  assert.match(triage, /approved with adjustments/i);
+  assert.match(triage, /blocked because of X/i);
+  assert.match(triage, /separate blockers from non-blocking improvements/i);
+  assert.match(triage, /hidden assumptions/i);
+  assert.match(triage, /missing constraints/i);
+  assert.match(triage, /weak or vague acceptance criteria/i);
+  assert.match(triage, /plan as not ready for Patch Master yet/i);
+  assert.match(triage, /Once that handoff is accepted for execution, do not expect to re-enter by default/i);
+  assert.match(triage, /reopen you without a named new blocker or changed acceptance criterion, treat that as a regression/i);
+
+  assert.match(requiredCheck, /Use exactly one verdict/i);
+  assert.match(requiredCheck, /Use this lane only when the risk justifies it/i);
+  assert.match(requiredCheck, /Do not use Required Check as part of the default path/i);
+  assert.match(requiredCheck, /`OKAY`/);
+  assert.match(requiredCheck, /`REJECT`/);
+  assert.match(requiredCheck, /one review pass by default/i);
+  assert.match(requiredCheck, /at most one explicit follow-up review/i);
+  assert.match(requiredCheck, /no infinite revise\/review loop/i);
+  assert.match(requiredCheck, /do not reopen \*\*Milestone\*\* or \*\*Triage\*\* by default/i);
+  assert.match(requiredCheck, /do not become a second long planning phase/i);
+});
+
+test("patch master expects a grounded handoff packet", () => {
+  const content = readText("source/agents/patch-master.agent.md");
+  assert.match(content, /objective/i);
+  assert.match(content, /constraints/i);
+  assert.match(content, /candidate files/i);
+  assert.match(content, /references or pattern anchors/i);
+  assert.match(content, /acceptance criteria/i);
+  assert.match(content, /must-not-do notes/i);
+  assert.match(content, /verification expectations/i);
+  assert.match(content, /If the request is vague, cold-start, multi-file, or weakly grounded/i);
+  assert.match(content, /ask for Milestone or Repo Master planning support/i);
+  assert.match(content, /concrete enough that \*\*Repo Master\*\* can close the user turn/i);
+  assert.match(content, /execution owner/i);
+  assert.match(content, /do not reopen broad planning once you accept the execution packet/i);
+  assert.match(content, /once execution begins, you own the execution phase/i);
+  assert.match(content, /do not reopen \*\*Milestone\*\*, \*\*Triage\*\*, broad \*\*Repo Scout\*\*, or broad \*\*Ref Index\*\* work by default/i);
+  assert.match(content, /prefer bounded self-reading/i);
+  assert.match(content, /Blocked during execution/i);
+  assert.match(content, /do not delegate planning back upward unless a real blocker/i);
+  assert.match(content, /Integration execution ownership/i);
+  assert.match(content, /integration-class/i);
+  assert.match(content, /generic helpers such as `Explore Agent` or `General Purpose Agent`/i);
+  assert.match(content, /Shared-surface owner:/i);
+  assert.match(content, /Foundation readiness:/i);
+  assert.match(content, /Foundation recovery suggested:/i);
+  assert.match(content, /treat `\.xgc\/` as an X for GitHub Copilot runtime artifact/i);
+  assert.match(content, /scaffold in a temporary directory/i);
+  assert.match(content, /`npx --yes create-next-app@14 \.\.\.`/i);
+  assert.match(content, /`npx create-next-app@14 \.\.\. --yes`/i);
+  assert.match(content, /passed to the scaffold package too late/i);
+  assert.match(content, /not provably non-interactive/i);
+  assert.match(content, /cap dependency\/version exploration/i);
+  assert.match(content, /\/tasks/i);
+  assert.match(content, /Execution status: ready_for_return/i);
+  assert.match(content, /Execution status: blocked/i);
+  assert.match(content, /separate files committed during the session from files still dirty/i);
+  assert.match(content, /what changed/i);
+  assert.match(content, /list every file you changed/i);
+  assert.match(content, /list the exact checks you ran/i);
+  assert.match(content, /state whether the original handoff acceptance criteria are satisfied/i);
+  assert.match(content, /whether final review is recommended/i);
+  assert.match(content, /whether the result is ready for Repo Master to return to the user/i);
+  assert.match(content, /do not invite another planning or triage pass unless a new blocker actually exists/i);
+  assert.match(content, /does not need to reopen planning or broad review by default/i);
+});
+
+test("primary docs teach the planning-first workflow for non-trivial work", () => {
+  const docs = [
+    readText("README.md"),
+    readText("docs/usage.md"),
+    readText("docs/architecture.md"),
+    readText("docs/model-routing.md"),
+    readText("docs/agents.md"),
+    readText("docs/command-reference.md"),
+    readText("docs/runtime-validation.md")
+  ].join("\n");
+
+  assert.match(docs, /Milestone.*real planning gate|real planner for non-trivial work/is);
+  assert.match(docs, /Repo Scout.*ground/i);
+  assert.match(docs, /Triage.*bounded/i);
+  assert.match(docs, /non-trivial.*risky|risky.*non-trivial/is);
+  assert.match(docs, /Required Check.*bounded/i);
+  assert.match(docs, /Patch Master.*grounded/i);
+  assert.match(docs, /result-read gap/i);
+  assert.match(docs, /provider billing|billing truth|premium-request/i);
+  assert.doesNotMatch(docs, /cheap entry -> cheap grounding/i);
+  assert.doesNotMatch(docs, /cheap front-door entry meter/i);
+  assert.doesNotMatch(docs, /structure-analysis.*Repo Scout x4/is);
+  assert.doesNotMatch(docs, /Repo Master -> Patch Master by default/i);
+  assert.match(docs, /xgc_plan/);
+  assert.match(docs, /xgc_triage/);
+  assert.match(docs, /xgc_check/);
+});
+
+test("runtime smoke keeps planning integrity and neutral route evidence", () => {
+  const script = readText("scripts/smoke-copilot-cli.ts");
+  assert.match(script, /id: "front-door-routing"/);
+  assert.doesNotMatch(script, /STRUCTURE_ANALYSIS_ROUTE_CLASS/);
+  assert.doesNotMatch(script, /classifyEntryMeterPrompt/);
+  assert.match(script, /id: "docs-heavy-entry"/);
+  assert.match(script, /requiredSubagents: \["Ref Index"\]/);
+  assert.match(script, /id: "planning-cold-start"/);
+  assert.match(script, /requiredSubagents: \["Milestone", "Repo Scout", "Triage"\]/);
+  assert.match(script, /expectedSubagentOrder: \["Repo Scout", "Milestone", "Triage"\]/);
+  assert.match(script, /minimumSubagentCounts:/);
+  assert.match(script, /MIN_VALIDATED_SCOUT_WAVE_SIZE/);
+  assert.match(script, new RegExp(`"Repo Scout": MIN_VALIDATED_SCOUT_WAVE_SIZE`));
+  assert.match(script, /forbiddenSubagents: \["Patch Master"\]/);
+  assert.match(script, /Constraints: edit only validation-fixtures\/notes\/runtime-check\.md/);
+  assert.match(script, /Must-not-do: no extra lines, no unrelated edits, no planning detour\./);
+  assert.match(script, /Verification expectations: confirm the exact file content and then stop\./);
+  assert.match(script, /observedFrontDoorHandledDirectly/);
+  assert.match(script, /observedPlanningChain/);
+  assert.match(script, /routeSummarySource/);
+  assert.match(script, /observedScoutCount/);
+  assert.match(script, /triageInvocationCount/);
+  assert.match(script, /triageDuplicateObserved/);
+  assert.match(script, /executionReadyHandoffSeenBeforeSecondTriage/);
+  assert.match(script, /observedPlannerBeforeExecutor/);
+  assert.match(script, /observedTriageBeforeExecutor/);
+  assert.match(script, /observedRefIndex/);
+  assert.match(script, /observedGroundingBeforeExecutor/);
+  assert.match(script, /observedExecutionPhasePure/);
+  assert.match(script, /postExecutionPlannerReopenAgents/);
+  assert.match(script, /postExecutionOwnershipLeakObserved/);
+  assert.match(script, /postExecutionPlannerReopenAgents\.length > 0 &&\s*!routeSummary\.ownershipLeakAllowedReason/s);
+  assert.match(script, /postExecutionGenericAgents/);
+  assert.match(script, /builtInGenericAgentInvocationCount/);
+  assert.match(script, /executionOwner/);
+  assert.match(script, /ownershipTransferredToExecution/);
+  assert.match(script, /backgroundExecutionAgentObserved/);
+  assert.match(script, /backgroundExecutionAgentUnresolved/);
+  assert.match(script, /backgroundExecutionAgentIds/);
+  assert.match(script, /foundationReadinessAssessed/);
+  assert.match(script, /repeatedFoundationFailureObserved/);
+  assert.match(script, /foundationRecoverySuggested/);
+  assert.match(script, /validationPortConflictObserved/);
+  assert.match(script, /validationServerReadinessFailureObserved/);
+  assert.match(script, /integrationOwnedSurfacesTouched/);
+  assert.match(script, /committedRepoFiles/);
+  assert.match(script, /workingTreeOnlyDiffObserved/);
+  assert.match(script, /repoCodeChanged/);
+  assert.match(script, /observedMemoryProbeSuppressed/);
+  assert.match(script, /githubMemoryEnabledCheckCount/);
+  assert.match(script, /prContextCheckCount/);
+  assert.match(script, /observedPrProbeSuppressed/);
+  assert.match(script, /providerRetryActive/);
+  assert.match(script, /providerRetryState/);
+  assert.match(script, /reportedChangeSummary/);
+  assert.match(script, /observedWorkspaceChangeSummary/);
+  assert.match(script, /repoWorkingTreeFiles/);
+  assert.match(script, /sessionStateFiles/);
+  assert.match(script, /validationArtifactFiles/);
+  assert.match(script, /sessionStateOnly/);
+  assert.match(script, /executionClaimWithoutObservedRepoDiff/);
+  assert.match(script, /routeConfidence/);
+});

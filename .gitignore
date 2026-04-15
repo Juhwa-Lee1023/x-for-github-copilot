@@ -1,0 +1,9 @@
+.DS_Store
+node_modules/
+.xgc/
+.o[m]g/
+o[m]g-planning-subsystem-pack/
+.tmp/
+tmp/
+coverage/
+.github/copilot/settings.local.json

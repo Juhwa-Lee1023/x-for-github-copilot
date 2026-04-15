@@ -1,0 +1,77 @@
+name: Feature request
+description: Suggest a focused improvement for X for GitHub Copilot
+title: "[Feature]: "
+labels:
+  - enhancement
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please write in English and keep the request focused. X for GitHub Copilot prioritizes reliable operator truth over broad narrative output.
+  - type: checkboxes
+    id: prerequisites
+    attributes:
+      label: Prerequisites
+      options:
+        - label: I have searched existing issues and pull requests for related work.
+          required: true
+        - label: I have checked whether this belongs in documentation instead of product behavior.
+          required: true
+  - type: dropdown
+    id: feature_type
+    attributes:
+      label: Feature type
+      options:
+        - Agent or specialist lane behavior
+        - Model policy
+        - Install or global profile
+        - Hooks or materialization
+        - Runtime validation or reporting
+        - Session finalization truth
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user or operator problem should this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the smallest practical change that would solve the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Include any workaround or smaller approach you considered.
+  - type: checkboxes
+    id: expected_surfaces
+    attributes:
+      label: Expected implementation surfaces
+      description: Select all likely areas. This helps keep source, runtime mirrors, docs, and tests aligned.
+      options:
+        - label: Canonical source prompts or agent definitions
+        - label: Generated runtime mirrors
+        - label: Install/global materialization
+        - label: Hooks, MCP, LSP, or runtime config
+        - label: Reports, summaries, or validation artifacts
+        - label: Documentation
+        - label: Tests
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation idea
+      description: How should maintainers know this works?
+      placeholder: "Example: add a unit test for model policy resolution and run `npm run validate`."
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context

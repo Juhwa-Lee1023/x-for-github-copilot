@@ -1,0 +1,107 @@
+name: Bug report
+description: Report a reproducible problem in X for GitHub Copilot
+title: "[Bug]: "
+labels:
+  - bug
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Please write in English so the issue is easier to triage publicly.
+
+        X for GitHub Copilot is a community project for GitHub Copilot CLI. Do not paste tokens, private logs, or proprietary source code.
+  - type: checkboxes
+    id: prerequisites
+    attributes:
+      label: Prerequisites
+      options:
+        - label: I have searched existing issues for a duplicate.
+          required: true
+        - label: I have removed secrets, tokens, private repository names, and personal data from logs.
+          required: true
+        - label: I am using GitHub Copilot CLI, not another runtime.
+          required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Affected surface
+      options:
+        - Install or global profile
+        - Plain Copilot TUI startup
+        - Agent routing or specialist lane
+        - Model policy
+        - Hooks or materialization
+        - Runtime validation or reports
+        - Session finalization truth
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Describe the bug and the user-visible impact.
+      placeholder: "Example: plain `copilot` opens, but Repo Master is not selected after install."
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Provide exact commands and actions. If the issue happens in the TUI, include the prompt you pasted.
+      placeholder: |
+        1. Run ...
+        2. Select model ...
+        3. Paste prompt ...
+        4. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have happened?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What actually happened?
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation output
+      description: Paste relevant output from validation commands.
+      placeholder: |
+        copilot --version
+        npm run validate:global
+        npm run validate
+        npm run report:surfaces
+        npm run repair:raw-hooks -- --dry-run
+      render: shell
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or session artifacts
+      description: Paste short relevant excerpts only. Redact secrets and private data.
+      render: text
+  - type: input
+    id: copilot_version
+    attributes:
+      label: GitHub Copilot CLI version
+      placeholder: "Example: GitHub Copilot CLI 1.0.27"
+  - type: input
+    id: os
+    attributes:
+      label: OS and shell
+      placeholder: "Example: macOS 15.4, zsh"
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Anything else that helps explain the issue.

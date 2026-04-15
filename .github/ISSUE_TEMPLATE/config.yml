@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://github.com/Juhwa-Lee1023/x-for-github-copilot#readme
+    about: Read the setup guide, usage notes, and project overview.
+  - name: Runtime validation guide
+    url: https://github.com/Juhwa-Lee1023/x-for-github-copilot/blob/main/docs/runtime-validation.md
+    about: Learn how to inspect runtime surfaces, finalization truth, and validation reports.

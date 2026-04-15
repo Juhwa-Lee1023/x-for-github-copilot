@@ -1,0 +1,43 @@
+{
+  "name": "xgc",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "description": "X for GitHub Copilot: planning-first integration orchestration and runtime truth for GitHub Copilot CLI workflows.",
+  "type": "module",
+  "scripts": {
+    "generate:surfaces": "tsx scripts/generate-runtime-surfaces.ts",
+    "generate:surfaces:check": "tsx scripts/generate-runtime-surfaces.ts --check",
+    "materialize:global": "tsx scripts/materialize-global-xgc.ts",
+    "report:surfaces": "tsx scripts/report-runtime-surfaces.ts",
+    "report:session-bundle": "tsx scripts/report-session-bundle.ts",
+    "release:manifest": "tsx scripts/generate-release-manifest.ts",
+    "typecheck": "tsc --noEmit",
+    "update:check": "node scripts/xgc-update.mjs --check",
+    "update:apply": "node scripts/xgc-update.mjs",
+    "validate:config": "tsx scripts/validate-plugin.ts",
+    "validate:global": "tsx scripts/validate-global-xgc.ts",
+    "repair:raw-hooks": "tsx scripts/repair-raw-copilot-hooks.ts",
+    "validate": "npm run generate:surfaces:check && npm run validate:config && npm run typecheck && npm run smoke:fresh-bootstrap && npm test",
+    "validate:runtime": "tsx scripts/smoke-copilot-cli.ts",
+    "smoke:structural": "bash scripts/smoke-test.sh",
+    "smoke:fresh-bootstrap": "tsx scripts/fresh-bootstrap-smoke.ts",
+    "smoke:copilot-cli": "npm run validate:runtime --",
+    "smoke-test": "npm run smoke:structural",
+    "bootstrap": "bash scripts/bootstrap-xgc-stack.sh",
+    "install:global": "bash scripts/install-global-xgc.sh",
+    "uninstall:global": "bash scripts/uninstall-global-xgc.sh",
+    "setup:workspace": "bash scripts/setup-workspace.sh",
+    "setup:copilot-cli": "bash scripts/setup-copilot-cli.sh",
+    "sync-agents": "bash scripts/sync-agents.sh",
+    "test": "node --import tsx --test tests/*.test.ts"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@types/node": "^24.6.0",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.3"
+  }
+}

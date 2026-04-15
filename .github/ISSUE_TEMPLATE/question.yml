@@ -1,0 +1,53 @@
+name: Question or support
+description: Ask a focused usage, setup, or behavior question
+title: "[Question]: "
+labels:
+  - question
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please write in English and include enough context to make the question answerable. Do not paste secrets or private logs.
+  - type: dropdown
+    id: category
+    attributes:
+      label: Category
+      options:
+        - Installation or setup
+        - Plain Copilot TUI usage
+        - Agent routing
+        - Model policy
+        - Specialist lanes
+        - Runtime validation or finalization
+        - Hook or raw profile repair
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: What do you need help understanding?
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Include commands, prompts, model selection, and relevant environment details.
+      placeholder: |
+        copilot --version
+        npm run validate:global
+        Selected model:
+        Prompt used:
+  - type: textarea
+    id: attempted
+    attributes:
+      label: What have you tried?
+      description: List docs, commands, or workarounds you already tried.
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context

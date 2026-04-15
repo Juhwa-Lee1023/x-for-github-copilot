@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "type": "command",
+        "bash": "bash -lc 'xgc_hook_root=\"\"; if [ -n \"${XGC_HOOK_SCRIPT_ROOT:-}\" ] && [ -f \"${XGC_HOOK_SCRIPT_ROOT}/session-start.sh\" ]; then xgc_hook_root=\"${XGC_HOOK_SCRIPT_ROOT}\"; elif [ -f \"./scripts/hooks/session-start.sh\" ]; then xgc_hook_root=\"./scripts/hooks\"; fi; if [ -n \"$xgc_hook_root\" ]; then bash \"$xgc_hook_root/session-start.sh\"; else exit 0; fi'",
+        "cwd": ".",
+        "timeoutSec": 10
+      }
+    ],
+    "preToolUse": [
+      {
+        "type": "command",
+        "bash": "bash -lc 'xgc_hook_root=\"\"; if [ -n \"${XGC_HOOK_SCRIPT_ROOT:-}\" ] && [ -f \"${XGC_HOOK_SCRIPT_ROOT}/pre-tool-use.sh\" ]; then xgc_hook_root=\"${XGC_HOOK_SCRIPT_ROOT}\"; elif [ -f \"./scripts/hooks/pre-tool-use.sh\" ]; then xgc_hook_root=\"./scripts/hooks\"; fi; if [ -n \"$xgc_hook_root\" ]; then bash \"$xgc_hook_root/pre-tool-use.sh\"; else exit 0; fi'",
+        "cwd": ".",
+        "timeoutSec": 10
+      }
+    ],
+    "agentStop": [
+      {
+        "type": "command",
+        "bash": "bash -lc 'xgc_hook_root=\"\"; if [ -n \"${XGC_HOOK_SCRIPT_ROOT:-}\" ] && [ -f \"${XGC_HOOK_SCRIPT_ROOT}/agent-stop.sh\" ]; then xgc_hook_root=\"${XGC_HOOK_SCRIPT_ROOT}\"; elif [ -f \"./scripts/hooks/agent-stop.sh\" ]; then xgc_hook_root=\"./scripts/hooks\"; fi; if [ -n \"$xgc_hook_root\" ]; then bash \"$xgc_hook_root/agent-stop.sh\"; else exit 0; fi'",
+        "cwd": ".",
+        "timeoutSec": 10
+      }
+    ],
+    "subagentStop": [
+      {
+        "type": "command",
+        "bash": "bash -lc 'xgc_hook_root=\"\"; if [ -n \"${XGC_HOOK_SCRIPT_ROOT:-}\" ] && [ -f \"${XGC_HOOK_SCRIPT_ROOT}/subagent-stop.sh\" ]; then xgc_hook_root=\"${XGC_HOOK_SCRIPT_ROOT}\"; elif [ -f \"./scripts/hooks/subagent-stop.sh\" ]; then xgc_hook_root=\"./scripts/hooks\"; fi; if [ -n \"$xgc_hook_root\" ]; then bash \"$xgc_hook_root/subagent-stop.sh\"; else exit 0; fi'",
+        "cwd": ".",
+        "timeoutSec": 10
+      }
+    ],
+    "errorOccurred": [
+      {
+        "type": "command",
+        "bash": "bash -lc 'xgc_hook_root=\"\"; if [ -n \"${XGC_HOOK_SCRIPT_ROOT:-}\" ] && [ -f \"${XGC_HOOK_SCRIPT_ROOT}/error-occurred.sh\" ]; then xgc_hook_root=\"${XGC_HOOK_SCRIPT_ROOT}\"; elif [ -f \"./scripts/hooks/error-occurred.sh\" ]; then xgc_hook_root=\"./scripts/hooks\"; fi; if [ -n \"$xgc_hook_root\" ]; then bash \"$xgc_hook_root/error-occurred.sh\"; else exit 0; fi'",
+        "cwd": ".",
+        "timeoutSec": 10
+      }
+    ]
+  }
+}

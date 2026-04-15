@@ -1,0 +1,19 @@
+{
+  "name": "xgc",
+  "description": "X for GitHub Copilot: planning-first integration orchestration and runtime truth for GitHub Copilot CLI workflows.",
+  "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
+  "keywords": [
+    "copilot",
+    "github-copilot",
+    "agents",
+    "skills",
+    "omo",
+    "development"
+  ],
+  "agents": "agents/",
+  "skills": "skills/",
+  "hooks": "hooks/hooks.json",
+  "mcpServers": ".github/mcp.json",
+  "lspServers": "lsp.json"
+}
