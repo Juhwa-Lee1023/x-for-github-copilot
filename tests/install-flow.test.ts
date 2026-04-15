@@ -99,15 +99,32 @@ test("packaged npm bundle contains the runtime files needed for npx install", ()
 
 test("package runtime dependencies stay empty while build tooling remains dev-only", () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, "package.json"), "utf8")) as {
+    bin?: Record<string, string>;
     dependencies?: Record<string, string>;
     devDependencies?: Record<string, string>;
     scripts?: Record<string, string>;
   };
 
+  assert.deepEqual(pkg.bin, { "x-for-github-copilot": "bin/xgc.mjs" });
   assert.deepEqual(pkg.dependencies ?? {}, {});
   assert.equal(pkg.devDependencies?.tsx, "^4.20.5");
   assert.equal(pkg.devDependencies?.esbuild, "^0.25.11");
   assert.match(pkg.scripts?.validate ?? "", /generate:surfaces:check .*generate:runtime-dist:check/);
+});
+
+test("npm package exposes a single default npx bin", () => {
+  const packRoot = fs.mkdtempSync(path.join(os.tmpdir(), "xgc-npx-bin-package-"));
+  const packOutput = execFileSync("npm", ["pack", "--pack-destination", packRoot], {
+    cwd: repoRoot,
+    encoding: "utf8"
+  }).trim();
+  const packageTgz = path.join(packRoot, packOutput.split(/\r?\n/).at(-1) ?? "");
+  execFileSync("tar", ["-xzf", packageTgz, "-C", packRoot]);
+  const packedPackage = JSON.parse(
+    fs.readFileSync(path.join(packRoot, "package", "package.json"), "utf8")
+  ) as { bin?: Record<string, string> };
+
+  assert.deepEqual(packedPackage.bin, { "x-for-github-copilot": "bin/xgc.mjs" });
 });
 
 test("xgc doctor requires the prebuilt runtime entry instead of falling back to tsx", () => {

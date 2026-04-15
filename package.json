@@ -6,7 +6,6 @@
   "description": "X for GitHub Copilot: planning-first integration orchestration and runtime truth for GitHub Copilot CLI workflows.",
   "type": "module",
   "bin": {
-    "xgc": "bin/xgc.mjs",
     "x-for-github-copilot": "bin/xgc.mjs"
   },
   "publishConfig": {

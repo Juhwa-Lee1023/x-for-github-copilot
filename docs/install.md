@@ -7,25 +7,115 @@ X for GitHub Copilot currently supports GitHub Copilot CLI workflows through a d
 
 ## Prerequisites
 
-- Git
 - Node.js 20+
 - GitHub Copilot CLI installed and authenticated
 
-## Recommended Install: npx Global X for GitHub Copilot Mode
+## For Humans
+
+Paste this into your LLM agent session:
+
+```text
+Install and configure X for GitHub Copilot by following the instructions here:
+https://raw.githubusercontent.com/Juhwa-Lee1023/x-for-github-copilot/refs/heads/main/docs/install.md
+```
+
+Or run the interactive installer yourself:
 
 ```bash
 npx x-for-github-copilot install
 ```
 
-This is the primary user-facing install path.
-
-Equivalent Bun entry:
+Bun equivalent:
 
 ```bash
 bunx x-for-github-copilot install
 ```
 
-Both commands run the packaged XGC runtime and install the same dedicated profile/shim layout. `npx` is the primary recommendation because GitHub Copilot CLI users are more likely to already have Node/npm than Bun.
+The recommended path is to let an agent do the setup and verification. Installation touches your Copilot profile and shell startup files, so exact flags and fresh-shell checks matter.
+
+## For LLM Agents
+
+Important: use `curl` to fetch this file, not WebFetch. WebFetch can summarize away required flags, permission-mode choices, and verification steps.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Juhwa-Lee1023/x-for-github-copilot/refs/heads/main/docs/install.md
+```
+
+If you are helping a user install X for GitHub Copilot, follow these steps.
+
+### Step 0: Confirm prerequisites and ask permission mode
+
+Confirm:
+
+- GitHub Copilot CLI is installed
+- the user is authenticated in GitHub Copilot CLI
+- Node.js 20+ is available
+
+Then ask exactly one permission-mode question:
+
+```text
+Which default XGC permission mode should I persist: ask, work, or yolo?
+```
+
+Use the answer as `<mode>` below.
+
+Mode meanings:
+
+- `ask`: normal Copilot prompts
+- `work`: pre-approves common development work while keeping selected risky operations gated
+- `yolo`: maps to Copilot CLI `--allow-all`; use only when the user explicitly wants unattended execution
+
+### Step 1: Run the installer
+
+```bash
+npx x-for-github-copilot install --permission-mode <ask|work|yolo>
+```
+
+Bun equivalent if the user specifically prefers Bun:
+
+```bash
+bunx x-for-github-copilot install --permission-mode <ask|work|yolo>
+```
+
+Do not clone the repo for normal user installation. The package installer uses the packaged runtime bundle.
+
+### Step 2: Verify setup
+
+Run:
+
+```bash
+npx x-for-github-copilot doctor
+```
+
+Then verify a fresh interactive shell:
+
+```bash
+exec zsh
+type copilot
+copilot plugin list
+```
+
+Expected:
+
+- `type copilot` shows the XGC shell function or shim
+- `copilot plugin list` shows `xgc`
+- plain `copilot` opens GitHub Copilot CLI with XGC loaded
+
+### Step 3: Explain how to use it
+
+Tell the user:
+
+- open a new terminal, then run plain `copilot`
+- no slash command or direct subagent invocation is required for normal use
+- use `/model` inside Copilot CLI when they want to switch the root model
+- use `copilot_raw` to bypass XGC
+- use `xgc_mode ask|work|yolo` to change the current shell's permission mode
+
+Do not stop at "install succeeded." Report the exact commands, exit codes, doctor result, fresh-shell result, and these usage notes.
+
+### Step 4: If verification fails
+
+Do not claim success. Run `npx x-for-github-copilot doctor`, inspect the failure, and fix the concrete issue before retrying. If shell activation is the only problem, open a fresh terminal or source `~/.config/xgc/xgc-shell.sh`.
 
 ## What The Packaged Install Does
 
@@ -129,7 +219,7 @@ The default install state uses `autoUpdateMode: check`, so the project is prepar
 
 When the shell shim is loaded in an interactive shell, that default `check` mode performs at most one quiet compatibility check per day. If an operator later chooses `apply`, only the latest compatible release on the current track is applied automatically.
 
-Current shell shim copies detach that background check cleanly, so opening a new terminal should not print zsh job-completion noise. If you still see a line such as `[4] + done node "$updater" --check --if-due --quiet`, the active shim is stale or manually modified; rerun `bash scripts/install-global-xgc.sh --write-shell-profile` to refresh it, or set `XGC_AUTO_UPDATE_MODE=off` in `~/.config/xgc/profile.env` if you do not want automatic checks at all.
+Current shell shim copies detach that background check cleanly, so opening a new terminal should not print zsh job-completion noise. If you still see a line such as `[4] + done node "$updater" --check --if-due --quiet`, the active shim is stale or manually modified; rerun `npx x-for-github-copilot install --permission-mode <your-current-mode>` to refresh it, or set `XGC_AUTO_UPDATE_MODE=off` in `~/.config/xgc/profile.env` if you do not want automatic checks at all.
 
 ## Permission Mode
 
@@ -142,16 +232,19 @@ During interactive install, X for GitHub Copilot asks which permission mode shou
 - `yolo`
   passes Copilot CLI's `--allow-all`; this is fully unattended and least safe
 
-For non-interactive install, X for GitHub Copilot falls back to `ask` unless you pass a mode explicitly. For agent-driven or OMO-style copy-paste install from a plain Copilot TUI, the prompt should tell the agent to ask the user for `ask` / `work` / `yolo` before starting the shell tool, then pass that selection through `--permission-mode`. That avoids the hidden installer `read` prompt that can otherwise stall inside Copilot's shell tool:
+For non-interactive install, X for GitHub Copilot falls back to `ask` unless you pass a mode explicitly. For agent-driven or OMO-style copy-paste install from a plain Copilot TUI, give the agent this short prompt:
 
 ```text
-Install X for GitHub Copilot from the current repository. Before running the installer, ask me which default permission mode to persist (`ask`, `work`, or `yolo`) and wait for my selection. After I answer, run bash scripts/install-global-xgc.sh --write-shell-profile --permission-mode <my selection>. Then verify in a fresh interactive shell that `type copilot` resolves to the X for GitHub Copilot shim, `copilot plugin list` shows xgc, and `npm run validate:global` passes. After that, explain how I start using it from a new shell: open a new terminal or run `exec zsh`, use plain `copilot` as the front door, use `copilot_raw` to bypass XGC, and use `xgc_mode ask|work|yolo` to change the current shell mode. Report the exact commands, exit codes, validation results, and the short post-install usage notes.
+Install and configure X for GitHub Copilot by following the instructions here:
+https://raw.githubusercontent.com/Juhwa-Lee1023/x-for-github-copilot/refs/heads/main/docs/install.md
 ```
+
+The guide tells the agent to ask for `ask` / `work` / `yolo`, pass that selection through `--permission-mode`, and verify with `npx x-for-github-copilot doctor` plus a fresh shell. That avoids the hidden installer `read` prompt that can otherwise stall inside Copilot's shell tool.
 
 You can still run the installer directly when you already know the mode:
 
 ```bash
-bash scripts/install-global-xgc.sh --permission-mode work
+npx x-for-github-copilot install --permission-mode work
 ```
 
 You can change the current shell without reinstalling:
@@ -168,7 +261,7 @@ Explicit Copilot CLI permission flags such as `--allow-all`, `--allow-tool`, or 
 `yolo` maps to Copilot CLI's `--allow-all`. Use it only for an isolated workspace where you explicitly want unattended execution and understand that Copilot will not ask before running tools.
 
 ```bash
-bash scripts/install-global-xgc.sh --permission-mode yolo
+npx x-for-github-copilot install --permission-mode yolo
 xgc_mode yolo
 ```
 
@@ -206,7 +299,7 @@ For the current shell only, activate manually:
 source ~/.config/xgc/xgc-shell.sh
 ```
 
-The shell shim is expected to be sourceable from both bash and zsh, including zsh sessions with `set -u` / `nounset` enabled. It should also find the raw Copilot binary from a plain zsh session without requiring `XGC_COPILOT_RAW_BIN`; the shim uses a zsh-safe path lookup before falling back to bash-style lookup. `npm run materialize:global` now also records a resolvable raw Copilot binary in `~/.config/xgc/profile.env` when it can find one, and preserves an existing executable raw-binary setting on later materialization runs. If sourcing the shim prints `BASH_SOURCE[0]: parameter not set`, `bad option: -P`, or cannot find the raw binary even though `/opt/homebrew/bin/copilot` exists, the active shim copy is stale; rerun `npm run materialize:global` or `bash scripts/install-global-xgc.sh --write-shell-profile`, then open a fresh shell.
+The shell shim is expected to be sourceable from both bash and zsh, including zsh sessions with `set -u` / `nounset` enabled. It should also find the raw Copilot binary from a plain zsh session without requiring `XGC_COPILOT_RAW_BIN`; the shim uses a zsh-safe path lookup before falling back to bash-style lookup. `npm run materialize:global` records a resolvable raw Copilot binary in `~/.config/xgc/profile.env` for repo-checkout developer installs, and preserves an existing executable raw-binary setting on later materialization runs. If sourcing the shim prints `BASH_SOURCE[0]: parameter not set`, `bad option: -P`, or cannot find the raw binary even though `/opt/homebrew/bin/copilot` exists, the active shim copy is stale; rerun `npx x-for-github-copilot install --permission-mode <your-current-mode>`, then open a fresh shell.
 
 If you want a preview-only run without writing your shell startup file, omit `--write-shell-profile`:
 
@@ -418,8 +511,8 @@ That report tells you:
 
 The intended operator path is:
 
-1. install with `install-global-xgc.sh --write-shell-profile`
+1. install with `npx x-for-github-copilot install`
 2. open a new shell, or activate the shim manually for the current shell
-3. inspect winners with `npm run report:surfaces`
-4. validate structure with `npm run validate`
-5. run live runtime checks with `npm run validate:runtime` when you want route or capability evidence
+3. run plain `copilot`
+4. inspect status with `xgc status` or `npx x-for-github-copilot doctor`
+5. run live runtime checks only when you want route or capability evidence

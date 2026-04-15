@@ -32,10 +32,12 @@ test("README stays concise while preserving install, support, and lineage bounda
   assert.match(readme, /explicit\s*\/\s*strong-indirect\s*\/\s*weak\s*\/\s*unproven|explicit.*strong-indirect.*weak.*unproven/i);
   assert.match(readme, /does not promise universal premium-request reduction/i);
   assert.match(readme, /Planning-first orchestration, specialist work lanes, integration governance, and runtime truth for GitHub Copilot CLI/i);
-  assert.match(readme, /Install and configure X for GitHub Copilot by following the installation guide/i);
-  assert.match(readme, /https:\/\/github\.com\/Juhwa-Lee1023\/x-for-github-copilot\/blob\/main\/docs\/install\.md/i);
-  assert.match(readme, /ask me which default permission mode to persist/i);
+  assert.match(readme, /Install and configure X for GitHub Copilot by following the instructions here/i);
+  assert.match(readme, /https:\/\/raw\.githubusercontent\.com\/Juhwa-Lee1023\/x-for-github-copilot\/refs\/heads\/main\/docs\/install\.md/i);
+  assert.match(readme, /use `curl` to fetch the installation guide, not WebFetch/i);
+  assert.match(readme, /ask the user which default permission mode to persist/i);
   assert.match(readme, /npx x-for-github-copilot doctor/i);
+  assert.match(readme, /Plain `copilot` is the intended front door/i);
   assert.match(readme, /## Read Next/);
   assert.match(readme, /\[docs\/install\.md\]\(docs\/install\.md\)/);
   assert.match(readme, /\[docs\/usage\.md\]\(docs\/usage\.md\)/);
