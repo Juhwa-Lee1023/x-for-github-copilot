@@ -1189,7 +1189,10 @@ ${copilotResult.stderr}`);
     "--no-experimental"
   ]);
   const isInjectedPermissionFlag = (entry) => entry === "--allow-all" || entry === "--allow-all-tools" || entry === "--allow-all-paths" || entry === "--allow-all-urls" || entry.startsWith("--allow-tool=") || entry.startsWith("--deny-tool=") || entry.startsWith("--allow-url=") || entry.startsWith("--deny-url=");
-  const withoutInjectedFlags = (argv) => argv.filter((entry) => !injectedContextFlags.has(entry) && !isInjectedPermissionFlag(entry));
+  const isInjectedReasoningEffortFlag = (entry) => entry.startsWith("--reasoning-effort=");
+  const withoutInjectedFlags = (argv) => argv.filter(
+    (entry) => !injectedContextFlags.has(entry) && !isInjectedPermissionFlag(entry) && !isInjectedReasoningEffortFlag(entry)
+  );
   const shellEnvText = fs4.existsSync(paths.shellEnvPath) ? fs4.readFileSync(paths.shellEnvPath, "utf8") : "";
   assert.match(shellEnvText, /XGC_PERMISSION_MODE='?(ask|work|yolo)'?/, "profile.env should persist an X for GitHub Copilot permission mode");
   const defaultCall = runShellCall({

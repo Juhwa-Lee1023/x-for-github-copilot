@@ -397,9 +397,36 @@ function stopReasonFromEvents(eventsPath: string) {
   return derived;
 }
 
+function eventsContainTerminalStopHook(eventsPath: string) {
+  if (!fs.existsSync(eventsPath)) return false;
+  for (const line of fs.readFileSync(eventsPath, "utf8").split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    try {
+      const parsed = JSON.parse(line) as { type?: unknown; data?: unknown };
+      if (parsed.type !== "hook.start" && parsed.type !== "hook.end") continue;
+      const data = parsed.data && typeof parsed.data === "object" ? (parsed.data as Record<string, unknown>) : {};
+      if (data.hookType === "agentStop" || data.hookType === "subagentStop") return true;
+    } catch {
+      // Ignore malformed event rows; bundle reporting is best-effort.
+    }
+  }
+  return false;
+}
+
+function eventsPathForWorkspace(filePath: string, summary: Record<string, unknown>) {
+  const adjacent = path.join(path.dirname(filePath), "events.jsonl");
+  if (fs.existsSync(adjacent)) return adjacent;
+  const sourceWorkspaceYaml = asString(summary.source_session_workspace_yaml, "");
+  if (sourceWorkspaceYaml) {
+    const sourceEventsPath = path.join(path.dirname(sourceWorkspaceYaml), "events.jsonl");
+    if (fs.existsSync(sourceEventsPath)) return sourceEventsPath;
+  }
+  return adjacent;
+}
+
 function refreshStaleSessionWorkspace(filePath: string, summary: Record<string, unknown>) {
-  if (isValidationWorkspaceYaml(filePath) || !fs.existsSync(sessionFinalizerPath)) return summary;
-  const eventsPath = path.join(path.dirname(filePath), "events.jsonl");
+  if (!fs.existsSync(sessionFinalizerPath)) return summary;
+  const eventsPath = eventsPathForWorkspace(filePath, summary);
   if (!eventsContainTerminalShutdown(eventsPath)) return summary;
 
   const latestEventMs = latestEventTimestampMs(eventsPath);
@@ -424,7 +451,8 @@ function refreshStaleSessionWorkspace(filePath: string, summary: Record<string, 
     transcriptPath: eventsPath
   };
   if (stopReason) payload.stopReason = stopReason;
-  const result = spawnSync("python3", [sessionFinalizerPath, "agentStop"], {
+  const finalizerEvent = eventsContainTerminalStopHook(eventsPath) ? "agentStop" : "sessionShutdownRecovery";
+  const result = spawnSync("python3", [sessionFinalizerPath, finalizerEvent], {
     encoding: "utf8",
     input: JSON.stringify(payload),
     env: process.env

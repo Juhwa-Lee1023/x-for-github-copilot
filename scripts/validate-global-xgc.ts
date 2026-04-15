@@ -345,8 +345,14 @@ function main() {
     entry.startsWith("--deny-tool=") ||
     entry.startsWith("--allow-url=") ||
     entry.startsWith("--deny-url=");
+  const isInjectedReasoningEffortFlag = (entry: string) => entry.startsWith("--reasoning-effort=");
   const withoutInjectedFlags = (argv: string[]) =>
-    argv.filter((entry) => !injectedContextFlags.has(entry) && !isInjectedPermissionFlag(entry));
+    argv.filter(
+      (entry) =>
+        !injectedContextFlags.has(entry) &&
+        !isInjectedPermissionFlag(entry) &&
+        !isInjectedReasoningEffortFlag(entry)
+    );
   const shellEnvText = fs.existsSync(paths.shellEnvPath) ? fs.readFileSync(paths.shellEnvPath, "utf8") : "";
   assert.match(shellEnvText, /XGC_PERMISSION_MODE='?(ask|work|yolo)'?/, "profile.env should persist an X for GitHub Copilot permission mode");
 

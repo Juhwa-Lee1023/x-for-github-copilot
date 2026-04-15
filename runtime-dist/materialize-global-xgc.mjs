@@ -279,6 +279,14 @@ async function checkMirrorParity(sourceDir, targetDir, options = {}) {
     }
   }
 }
+async function mirrorIsCurrent(sourceDir, targetDir, options = {}) {
+  try {
+    await checkMirrorParity(sourceDir, targetDir, options);
+    return true;
+  } catch {
+    return false;
+  }
+}
 async function syncRuntimeSurfaces(repoRoot, options = {}) {
   const surfaces = [
     { source: "source/agents", target: "agents", transform: true },
@@ -292,6 +300,10 @@ async function syncRuntimeSurfaces(repoRoot, options = {}) {
     const targetDir = path.join(repoRoot, surface.target);
     if (options.check) {
       await checkMirrorParity(sourceDir, targetDir, { rootModel: options.rootModel ?? DEFAULT_ROOT_MODEL });
+      results.push({ source: surface.source, target: surface.target, changed: false });
+      continue;
+    }
+    if (await mirrorIsCurrent(sourceDir, targetDir, { rootModel: options.rootModel ?? DEFAULT_ROOT_MODEL })) {
       results.push({ source: surface.source, target: surface.target, changed: false });
       continue;
     }
@@ -356,6 +368,12 @@ function isXgcPermissionMode(value) {
 }
 function normalizeXgcPermissionMode(value) {
   return value && isXgcPermissionMode(value) ? value : "ask";
+}
+function isXgcReasoningEffort(value) {
+  return value === "low" || value === "medium" || value === "high" || value === "xhigh" || value === "off";
+}
+function normalizeXgcReasoningEffort(value) {
+  return value && isXgcReasoningEffort(value) ? value : "xhigh";
 }
 function copyCleanDir(sourceDir, targetDir) {
   fs3.rmSync(targetDir, { recursive: true, force: true });
@@ -673,6 +691,7 @@ function writeGlobalInstallState(opts) {
     updaterScriptPath: opts.paths.updaterScriptPath,
     rawCopilotBin: opts.rawCopilotBin,
     permissionMode: opts.permissionMode ?? "ask",
+    reasoningEffort: normalizeXgcReasoningEffort(opts.reasoningEffort),
     updateChannel: opts.updateChannel ?? "stable",
     updateTrack,
     updatePolicy,
@@ -700,6 +719,7 @@ function writeGlobalShellEnv(opts) {
     `export XGC_ENV_FILE=${shellQuote(path2.join(opts.paths.configHome, "env.sh"))}`,
     `export XGC_HOOK_SCRIPT_ROOT=${shellQuote(opts.paths.profileHookScriptsDir)}`,
     `export XGC_PERMISSION_MODE=${shellQuote(opts.permissionMode ?? "ask")}`,
+    `export XGC_REASONING_EFFORT=${shellQuote(normalizeXgcReasoningEffort(opts.reasoningEffort))}`,
     `export XGC_AUTO_UPDATE_MODE=${shellQuote(normalizeAutoUpdateMode(opts.autoUpdateMode))}`
   ];
   if (rawCopilotBin) {
@@ -721,6 +741,7 @@ function parseArgs(argv) {
     rawCopilotBin: process.env.XGC_COPILOT_RAW_BIN || null,
     rawCopilotBinFromCli: false,
     permissionMode: normalizeXgcPermissionMode(process.env.XGC_PERMISSION_MODE),
+    reasoningEffort: normalizeXgcReasoningEffort(process.env.XGC_REASONING_EFFORT),
     installSource: "repo-checkout",
     releaseRepo: process.env.GITHUB_REPOSITORY || "Juhwa-Lee1023/x-for-github-copilot",
     releaseTag: null,
@@ -746,6 +767,13 @@ function parseArgs(argv) {
         throw new Error(`Invalid --permission-mode: ${mode}. Expected ask, work, or yolo.`);
       }
       args2.permissionMode = mode;
+      index += 1;
+    } else if ((current === "--reasoning-effort" || current === "--effort") && argv[index + 1]) {
+      const effort = argv[index + 1];
+      if (!isXgcReasoningEffort(effort)) {
+        throw new Error(`Invalid --reasoning-effort: ${effort}. Expected low, medium, high, xhigh, or off.`);
+      }
+      args2.reasoningEffort = effort;
       index += 1;
     } else if (current === "--install-source" && argv[index + 1]) {
       const source = argv[index + 1];
@@ -794,6 +822,7 @@ try {
     homeDir: args.homeDir,
     repoRoot: args.repoRoot,
     permissionMode: args.permissionMode,
+    reasoningEffort: args.reasoningEffort,
     autoUpdateMode: args.autoUpdateMode
   });
   writeGlobalInstallState({
@@ -801,6 +830,7 @@ try {
     repoRoot: args.repoRoot,
     rawCopilotBin,
     permissionMode: args.permissionMode,
+    reasoningEffort: args.reasoningEffort,
     installSource: args.installSource,
     releaseRepo: args.releaseRepo,
     releaseTag: args.releaseTag,
@@ -814,6 +844,7 @@ try {
   console.log(`materialized lsp config: ${result.lspConfigPath}`);
   console.log(`raw copilot binary: ${rawCopilotBin ?? "not found; shim will resolve from PATH at shell load time"}`);
   console.log(`permission mode: ${args.permissionMode}`);
+  console.log(`reasoning effort: ${args.reasoningEffort}`);
   console.log(`auto update mode: ${args.autoUpdateMode}`);
   console.log(`copied agents: ${result.copiedAgents.length}`);
   console.log(`copied skills: ${result.copiedSkills.length}`);

@@ -293,6 +293,19 @@ async function checkMirrorParity(
   }
 }
 
+async function mirrorIsCurrent(
+  sourceDir: string,
+  targetDir: string,
+  options: { rootModel?: string | null } = {}
+) {
+  try {
+    await checkMirrorParity(sourceDir, targetDir, options);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function syncRuntimeSurfaces(
   repoRoot: string,
   options: { check?: boolean; rootModel?: string | null } = {}
@@ -312,6 +325,11 @@ export async function syncRuntimeSurfaces(
 
     if (options.check) {
       await checkMirrorParity(sourceDir, targetDir, { rootModel: options.rootModel ?? DEFAULT_ROOT_MODEL });
+      results.push({ source: surface.source, target: surface.target, changed: false });
+      continue;
+    }
+
+    if (await mirrorIsCurrent(sourceDir, targetDir, { rootModel: options.rootModel ?? DEFAULT_ROOT_MODEL })) {
       results.push({ source: surface.source, target: surface.target, changed: false });
       continue;
     }

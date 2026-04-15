@@ -63,6 +63,7 @@ export type MaterializeGlobalProfileOptions = {
 };
 
 export type XgcPermissionMode = "ask" | "work" | "yolo";
+export type XgcReasoningEffort = "low" | "medium" | "high" | "xhigh" | "off";
 export type XgcInstallSource = "repo-checkout" | "release-artifact" | "npm-package";
 
 export function isXgcPermissionMode(value: string): value is XgcPermissionMode {
@@ -71,6 +72,14 @@ export function isXgcPermissionMode(value: string): value is XgcPermissionMode {
 
 export function normalizeXgcPermissionMode(value: string | undefined | null): XgcPermissionMode {
   return value && isXgcPermissionMode(value) ? value : "ask";
+}
+
+export function isXgcReasoningEffort(value: string): value is XgcReasoningEffort {
+  return value === "low" || value === "medium" || value === "high" || value === "xhigh" || value === "off";
+}
+
+export function normalizeXgcReasoningEffort(value: string | undefined | null): XgcReasoningEffort {
+  return value && isXgcReasoningEffort(value) ? value : "xhigh";
 }
 
 export type MaterializeGlobalProfileResult = {
@@ -452,6 +461,7 @@ export function writeGlobalInstallState(opts: {
   repoRoot: string;
   rawCopilotBin: string | null;
   permissionMode?: XgcPermissionMode;
+  reasoningEffort?: XgcReasoningEffort;
   installSource?: XgcInstallSource;
   releaseRepo?: string;
   releaseTag?: string | null;
@@ -482,6 +492,7 @@ export function writeGlobalInstallState(opts: {
     updaterScriptPath: opts.paths.updaterScriptPath,
     rawCopilotBin: opts.rawCopilotBin,
     permissionMode: opts.permissionMode ?? "ask",
+    reasoningEffort: normalizeXgcReasoningEffort(opts.reasoningEffort),
     updateChannel: opts.updateChannel ?? "stable",
     updateTrack,
     updatePolicy,
@@ -503,6 +514,7 @@ export function writeGlobalShellEnv(opts: {
   homeDir?: string;
   repoRoot?: string;
   permissionMode?: XgcPermissionMode;
+  reasoningEffort?: XgcReasoningEffort;
   autoUpdateMode?: XgcAutoUpdateMode;
 }) {
   const rawCopilotBin =
@@ -519,6 +531,7 @@ export function writeGlobalShellEnv(opts: {
     `export XGC_ENV_FILE=${shellQuote(path.join(opts.paths.configHome, "env.sh"))}`,
     `export XGC_HOOK_SCRIPT_ROOT=${shellQuote(opts.paths.profileHookScriptsDir)}`,
     `export XGC_PERMISSION_MODE=${shellQuote(opts.permissionMode ?? "ask")}`,
+    `export XGC_REASONING_EFFORT=${shellQuote(normalizeXgcReasoningEffort(opts.reasoningEffort))}`,
     `export XGC_AUTO_UPDATE_MODE=${shellQuote(normalizeAutoUpdateMode(opts.autoUpdateMode))}`
   ];
 
