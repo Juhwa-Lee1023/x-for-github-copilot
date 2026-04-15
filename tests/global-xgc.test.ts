@@ -2425,6 +2425,7 @@ test("env.sh cannot override shell operational settings at invocation time", () 
       "export XGC_PERMISSION_MODE='yolo'",
       "export XGC_COPILOT_PROFILE_HOME='/tmp/stale-profile-from-env-sh'",
       "export XGC_COPILOT_RAW_BIN='/tmp/stale-raw-bin-from-env-sh'",
+      "export XGC_REASONING_EFFORT='xhigh'",
       "export COPILOT_HOME='/tmp/stale-copilot-home-from-env-sh'",
       "export PATH='/tmp/stale-path-from-env-sh'",
       "export XGC_SESSION_TEST_SECRET='still-loaded'"
@@ -2440,6 +2441,7 @@ test("env.sh cannot override shell operational settings at invocation time", () 
         `export HOME='${tempHome.replace(/'/g, `'\\''`)}'`,
         `export XGC_COPILOT_RAW_BIN='${rawBin.replace(/'/g, `'\\''`)}'`,
         "export XGC_PERMISSION_MODE='work'",
+        "export XGC_REASONING_EFFORT='off'",
         `source '${path.join(repoRoot, "scripts/xgc-shell.sh").replace(/'/g, `'\\''`)}'`,
         "copilot --prompt 'hi'"
       ].join("; ")
@@ -2456,6 +2458,7 @@ test("env.sh cannot override shell operational settings at invocation time", () 
   };
   assert.ok(call.argv.includes("--allow-tool=write"));
   assert.ok(!call.argv.includes("--allow-all"));
+  assert.ok(!call.argv.some((entry) => entry.startsWith("--reasoning-effort")));
   assert.equal(call.copilotHome, path.join(tempHome, ".copilot-xgc"));
   assert.equal(call.sessionSecret, "still-loaded");
   assert.notEqual(call.pathEnv, "/tmp/stale-path-from-env-sh");

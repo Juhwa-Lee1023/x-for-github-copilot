@@ -194,7 +194,7 @@ This is a practical GitHub Copilot CLI front door for this project, not a built-
 
 Plain `copilot` in X for GitHub Copilot mode enters through the `Repo Master` orchestration front door unless you explicitly pass `--agent`.
 
-`env.sh` is intended for runtime secrets such as MCP/API keys. The shell shim preserves operational settings such as `PATH`, `XGC_COPILOT_PROFILE_HOME`, `XGC_COPILOT_CONFIG_HOME`, `XGC_COPILOT_RAW_BIN`, `XGC_HOOK_SCRIPT_ROOT`, and `XGC_PERMISSION_MODE` around `env.sh` loading so a stale secret file cannot silently redirect the active profile, raw binary, command search path, or permission mode.
+`env.sh` is intended for runtime secrets such as MCP/API keys. The shell shim preserves operational settings such as `PATH`, `XGC_COPILOT_PROFILE_HOME`, `XGC_COPILOT_CONFIG_HOME`, `XGC_COPILOT_RAW_BIN`, `XGC_HOOK_SCRIPT_ROOT`, `XGC_PERMISSION_MODE`, and `XGC_REASONING_EFFORT` around `env.sh` loading so a stale secret file cannot silently redirect the active profile, raw binary, command search path, permission mode, or reasoning-effort override.
 
 ## Version Tracks And Updates
 

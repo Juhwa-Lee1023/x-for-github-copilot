@@ -227,6 +227,7 @@ xgc__load_env() {
   local keep_hook_script_root="${XGC_HOOK_SCRIPT_ROOT:-}"
   local keep_permission_mode="${XGC_PERMISSION_MODE:-}"
   local keep_auto_update_mode="${XGC_AUTO_UPDATE_MODE:-}"
+  local keep_reasoning_effort="${XGC_REASONING_EFFORT:-}"
   local keep_path="${PATH:-}"
   local keep_copilot_home_set=0
   local keep_copilot_home=""
@@ -245,6 +246,7 @@ xgc__load_env() {
   XGC_HOOK_SCRIPT_ROOT="$keep_hook_script_root"
   XGC_PERMISSION_MODE="$keep_permission_mode"
   XGC_AUTO_UPDATE_MODE="$keep_auto_update_mode"
+  XGC_REASONING_EFFORT="$keep_reasoning_effort"
   PATH="$keep_path"
   if [[ $keep_copilot_home_set -eq 1 ]]; then
     COPILOT_HOME="$keep_copilot_home"
@@ -259,6 +261,7 @@ xgc__load_env() {
   export XGC_HOOK_SCRIPT_ROOT
   export XGC_PERMISSION_MODE
   export XGC_AUTO_UPDATE_MODE
+  export XGC_REASONING_EFFORT
   export PATH
 }
 

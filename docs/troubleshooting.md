@@ -300,7 +300,7 @@ Treat this as bootstrap/runtime context, not app failure. For local implementati
 
 ## `env.sh` changed my X for GitHub Copilot profile, raw binary, or permission mode
 
-`~/.config/xgc/env.sh` should carry secrets and API keys, not shell-control settings. Current shim behavior preserves `PATH`, `XGC_COPILOT_PROFILE_HOME`, `XGC_COPILOT_CONFIG_HOME`, `XGC_COPILOT_RAW_BIN`, `XGC_HOOK_SCRIPT_ROOT`, and `XGC_PERMISSION_MODE` while loading `env.sh`, so a stale secret file should not override the active profile, raw binary, command search path, or permission mode. `profile.env` may persist raw binary, hook root, and permission defaults, but it must not redirect the dedicated profile/config homes away from `~/.copilot-xgc` and `~/.config/xgc`. Use `xgc_mode ask|work|yolo` or one-shot Copilot CLI flags for a single shell/session.
+`~/.config/xgc/env.sh` should carry secrets and API keys, not shell-control settings. Current shim behavior preserves `PATH`, `XGC_COPILOT_PROFILE_HOME`, `XGC_COPILOT_CONFIG_HOME`, `XGC_COPILOT_RAW_BIN`, `XGC_HOOK_SCRIPT_ROOT`, `XGC_PERMISSION_MODE`, and `XGC_REASONING_EFFORT` while loading `env.sh`, so a stale secret file should not override the active profile, raw binary, command search path, permission mode, or reasoning-effort override. `profile.env` may persist raw binary, hook root, permission defaults, and reasoning-effort defaults, but it must not redirect the dedicated profile/config homes away from `~/.copilot-xgc` and `~/.config/xgc`. Use `xgc_mode ask|work|yolo`, `XGC_REASONING_EFFORT=off`, or one-shot Copilot CLI flags for a single shell/session.
 
 ## Why does validation complain that root patched after Patch Master?
 
