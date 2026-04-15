@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 jobs:
   release:
@@ -24,20 +25,56 @@ jobs:
         with:
           node-version: 20
           cache: npm
+          registry-url: https://registry.npmjs.org
 
       - name: Install dependencies
         run: npm ci
 
+      - name: Verify tag matches package version
+        run: |
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          test "$PACKAGE_VERSION" = "$TAG_VERSION"
+
       - name: Run validation
         run: npm run validate
 
+      - name: Ensure generated runtime-dist is committed
+        run: git diff --exit-code -- runtime-dist
+
+      - name: Check npm publication status
+        id: npm_status
+        run: |
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          if npm view "x-for-github-copilot@${PACKAGE_VERSION}" version >/dev/null 2>&1; then
+            echo "already_published=true" >> "$GITHUB_OUTPUT"
+            echo "x-for-github-copilot@${PACKAGE_VERSION} is already published; skipping npm publish on rerun."
+          else
+            echo "already_published=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Pack npm distribution
+        run: |
+          mkdir -p release-assets
+          npm pack --pack-destination release-assets
+
       - name: Generate release metadata
         run: |
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          PACKAGE_TGZ="release-assets/x-for-github-copilot-${PACKAGE_VERSION}.tgz"
+          PACKAGE_SHA="$(shasum -a 256 "$PACKAGE_TGZ" | awk '{print $1}')"
           npm run release:manifest -- \
-            --version "${GITHUB_REF_NAME#v}" \
+            --version "$PACKAGE_VERSION" \
             --tag "${GITHUB_REF_NAME}" \
             --repo "${GITHUB_REPOSITORY}" \
-            --output-dir release-assets
+            --output-dir release-assets \
+            --npm-package-sha256 "$PACKAGE_SHA"
+
+      - name: Publish npm package
+        if: steps.npm_status.outputs.already_published != 'true'
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
@@ -46,3 +83,4 @@ jobs:
           files: |
             release-assets/release-manifest.json
             release-assets/tracks.json
+            release-assets/*.tgz

@@ -7,12 +7,24 @@ X for GitHub Copilot currently supports GitHub Copilot CLI workflows. It is an i
 
 ## Shell Entrypoints
 
+- `npx x-for-github-copilot install`
+  packaged runtime install that materializes the dedicated XGC profile and shell shim without requiring a repo clone first
+- `bunx x-for-github-copilot install`
+  same packaged runtime install path through Bun
 - `copilot`
   enters X for GitHub Copilot global profile mode through the `Repo Master` orchestration front door unless you pass an explicit `--agent`
 - `copilot_raw`
   bypasses the X for GitHub Copilot shim and calls the raw GitHub Copilot CLI binary
 - `xgc`
   same default X for GitHub Copilot front-door behavior as `copilot`
+- `xgc doctor`
+  installed-runtime validation against the active XGC state
+- `xgc update`
+  installed-runtime compatible update apply
+- `xgc uninstall`
+  installed-runtime uninstall/disable entrypoint
+- `xgc status`
+  installed-runtime install-state and runtime-store summary
 - `xgc_scout`
   routes directly to the bounded grounding lane `Repo Scout`
 - `xgc_plan`
@@ -28,14 +40,14 @@ X for GitHub Copilot currently supports GitHub Copilot CLI workflows. It is an i
 - `xgc_mode`
   prints or switches the current shell permission mode: `ask`, `work`, or `yolo`
 - `xgc_update`
-  checks or applies the latest compatible release for the installed X for GitHub Copilot track
+  compatibility alias for `xgc update`
 - `xgc_preflight`
   runs a tiny live prompt-readiness check against the X for GitHub Copilot profile so auth/model blockers are caught before long real TUI sessions
 
 ## Repository Scripts
 
 - [scripts/install-global-xgc.sh](../scripts/install-global-xgc.sh)
-  installs the dedicated X for GitHub Copilot profile and optional shell activation
+  installs the dedicated X for GitHub Copilot profile and optional shell activation from a repo checkout or packaged runtime
 - [scripts/uninstall-global-xgc.sh](../scripts/uninstall-global-xgc.sh)
   disables shell activation, uninstalls the dedicated XGC profile/config homes, or resets raw Copilot CLI back to login-only state depending on flags
 - [scripts/setup-workspace.sh](../scripts/setup-workspace.sh)

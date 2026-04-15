@@ -7,6 +7,12 @@ import path from "node:path";
 import { exists, repoRoot } from "./helpers.js";
 
 for (const script of [
+  "bin/xgc.mjs",
+  "runtime-dist/materialize-global-xgc.mjs",
+  "runtime-dist/validate-global-xgc.mjs",
+  "runtime-dist/xgc-update.mjs",
+  "runtime-dist/xgc-uninstall.mjs",
+  "scripts/uninstall-global-xgc.mjs",
   "scripts/bootstrap-xgc-stack.sh",
   "scripts/generate-runtime-surfaces.sh",
   "scripts/install-global-xgc.sh",
@@ -22,8 +28,18 @@ for (const script of [
 ]) {
   test(`script parses: ${script}`, () => {
     assert.ok(exists(script));
+    if (script.endsWith(".mjs")) {
+      execFileSync("node", ["--check", path.join(repoRoot, script)]);
+      return;
+    }
     execFileSync("bash", ["-n", path.join(repoRoot, script)]);
   });
+}
+
+function writeExecutable(filePath: string, content: string) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, content);
+  fs.chmodSync(filePath, 0o755);
 }
 
 test("TypeScript script entrypoints exist", () => {
@@ -46,6 +62,279 @@ test("TypeScript script entrypoints exist", () => {
   }
   assert.ok(exists("scripts/xgc-update.mjs"));
   execFileSync("node", ["--check", path.join(repoRoot, "scripts", "xgc-update.mjs")]);
+});
+
+test("packaged npm bundle contains the runtime files needed for npx install", () => {
+  const result = spawnSync("npm", ["pack", "--json", "--dry-run"], {
+    cwd: repoRoot,
+    encoding: "utf8"
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const packResult = JSON.parse(result.stdout) as Array<{ files: Array<{ path: string }> }>;
+  const packagedFiles = new Set((packResult[0]?.files ?? []).map((entry) => entry.path));
+
+  for (const requiredFile of [
+    "bin/xgc.mjs",
+    "runtime-dist/materialize-global-xgc.mjs",
+    "runtime-dist/validate-global-xgc.mjs",
+    "runtime-dist/xgc-update.mjs",
+    "runtime-dist/xgc-uninstall.mjs",
+    "plugin.json",
+    "hooks/hooks.json",
+    "scripts/install-global-xgc.sh",
+    "scripts/uninstall-global-xgc.sh",
+    "scripts/materialize-global-xgc.ts",
+    "scripts/validate-global-xgc.ts",
+    "scripts/xgc-update.mjs",
+    "scripts/uninstall-global-xgc.mjs",
+    "source/agents/repo-master.agent.md",
+    "agents/repo-master.agent.md",
+    ".github/mcp.json",
+    "lsp.json"
+  ]) {
+    assert.ok(packagedFiles.has(requiredFile), `missing from npm pack: ${requiredFile}`);
+  }
+});
+
+test("package runtime dependencies stay empty while build tooling remains dev-only", () => {
+  const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, "package.json"), "utf8")) as {
+    dependencies?: Record<string, string>;
+    devDependencies?: Record<string, string>;
+    scripts?: Record<string, string>;
+  };
+
+  assert.deepEqual(pkg.dependencies ?? {}, {});
+  assert.equal(pkg.devDependencies?.tsx, "^4.20.5");
+  assert.equal(pkg.devDependencies?.esbuild, "^0.25.11");
+  assert.match(pkg.scripts?.validate ?? "", /generate:surfaces:check .*generate:runtime-dist:check/);
+});
+
+test("xgc doctor requires the prebuilt runtime entry instead of falling back to tsx", () => {
+  const tempPackage = fs.mkdtempSync(path.join(os.tmpdir(), "xgc-missing-runtime-dist-"));
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "xgc-missing-runtime-home-"));
+  fs.mkdirSync(path.join(tempPackage, "bin"), { recursive: true });
+  fs.copyFileSync(path.join(repoRoot, "bin", "xgc.mjs"), path.join(tempPackage, "bin", "xgc.mjs"));
+  fs.writeFileSync(
+    path.join(tempPackage, "package.json"),
+    JSON.stringify({ name: "x-for-github-copilot", version: "0.1.0", type: "module" }, null, 2)
+  );
+
+  const result = spawnSync("node", [path.join(tempPackage, "bin", "xgc.mjs"), "doctor"], {
+    cwd: tempPackage,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      HOME: tempHome,
+      XGC_SKIP_SELF_DISPATCH: "1"
+    }
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Missing prebuilt runtime entry/);
+  assert.doesNotMatch(result.stderr, /--import tsx/);
+});
+
+test("xgc doctor dispatches to compiled runtime-dist validator", () => {
+  const tempPackage = fs.mkdtempSync(path.join(os.tmpdir(), "xgc-compiled-doctor-"));
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "xgc-compiled-doctor-home-"));
+  const markerPath = path.join(tempPackage, "doctor-marker.json");
+  fs.mkdirSync(path.join(tempPackage, "bin"), { recursive: true });
+  fs.mkdirSync(path.join(tempPackage, "runtime-dist"), { recursive: true });
+  fs.mkdirSync(path.join(tempPackage, "scripts"), { recursive: true });
+  fs.copyFileSync(path.join(repoRoot, "bin", "xgc.mjs"), path.join(tempPackage, "bin", "xgc.mjs"));
+  fs.writeFileSync(
+    path.join(tempPackage, "package.json"),
+    JSON.stringify({ name: "x-for-github-copilot", version: "0.1.0", type: "module" }, null, 2)
+  );
+  fs.writeFileSync(path.join(tempPackage, "scripts", "validate-global-xgc.ts"), "throw new Error('tsx fallback should not run');\n");
+  fs.writeFileSync(
+    path.join(tempPackage, "runtime-dist", "validate-global-xgc.mjs"),
+    [
+      "#!/usr/bin/env node",
+      "import fs from 'node:fs';",
+      `fs.writeFileSync(${JSON.stringify(markerPath)}, JSON.stringify({ argv: process.argv.slice(2) }));`
+    ].join("\n")
+  );
+
+  const result = spawnSync("node", [path.join(tempPackage, "bin", "xgc.mjs"), "doctor", "--home-dir", tempHome], {
+    cwd: tempPackage,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      HOME: tempHome,
+      XGC_SKIP_SELF_DISPATCH: "1"
+    }
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const marker = JSON.parse(fs.readFileSync(markerPath, "utf8")) as { argv: string[] };
+  assert.deepEqual(marker.argv, ["--repo-root", fs.realpathSync(tempPackage), "--home-dir", tempHome]);
+});
+
+test("packaged xgc install completes without invoking npm", () => {
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "xgc-packaged-install-home-"));
+  const tempPackRoot = fs.mkdtempSync(path.join(os.tmpdir(), "xgc-packaged-install-package-"));
+  const packOutput = execFileSync("npm", ["pack", "--pack-destination", tempPackRoot], {
+    cwd: repoRoot,
+    encoding: "utf8"
+  }).trim();
+  const packageTgz = path.join(tempPackRoot, packOutput.split(/\r?\n/).at(-1) ?? "");
+  execFileSync("tar", ["-xzf", packageTgz, "-C", tempPackRoot]);
+  const packageRoot = path.join(tempPackRoot, "package");
+  const tempBin = path.join(tempHome, "bin");
+  const copilotLog = path.join(tempHome, "copilot.log");
+  fs.writeFileSync(path.join(tempHome, ".bash_profile"), `export PATH=${tempBin}:$PATH\n`);
+  writeExecutable(
+    path.join(tempBin, "npm"),
+    "#!/usr/bin/env bash\necho 'npm must not be called from packaged install' >&2\nexit 99\n"
+  );
+  writeExecutable(
+    path.join(tempBin, "copilot"),
+    [
+      "#!/usr/bin/env bash",
+      `printf '%s\\n' \"$*\" >> ${JSON.stringify(copilotLog)}`,
+      "if [[ \"$1\" == \"plugin\" && \"$2\" == \"list\" ]]; then",
+      "  echo 'xgc'",
+      "  exit 0",
+      "fi",
+      "if [[ \"$1\" == \"plugin\" && \"$2\" == \"install\" ]]; then",
+      "  python3 - \"$COPILOT_HOME/config.json\" \"$3\" <<'PY'",
+      "import json, pathlib, sys",
+      "config_path = pathlib.Path(sys.argv[1])",
+      "plugin_root = sys.argv[2]",
+      "config_path.parent.mkdir(parents=True, exist_ok=True)",
+      "try:",
+      "    data = json.loads(config_path.read_text())",
+      "except Exception:",
+      "    data = {}",
+      "plugins = [p for p in data.get('installed_plugins', []) if p.get('name') != 'xgc']",
+      "plugins.append({'name': 'xgc', 'enabled': True, 'cache_path': plugin_root})",
+      "data['installed_plugins'] = plugins",
+      "config_path.write_text(json.dumps(data, indent=2) + '\\n')",
+      "PY",
+      "  exit 0",
+      "fi",
+      "python3 - \"$@\" <<'PY'",
+      "import json, os, sys",
+      "print(json.dumps({'argv': sys.argv[1:], 'copilotHome': os.environ.get('COPILOT_HOME')}))",
+      "PY",
+      "exit 0"
+    ].join("\n")
+  );
+
+  const result = spawnSync(
+    "node",
+    [
+      path.join(packageRoot, "bin", "xgc.mjs"),
+      "install",
+      "--home-dir",
+      tempHome,
+      "--no-write-shell-profile",
+      "--permission-mode",
+      "ask",
+      "--validate-runtime"
+    ],
+    {
+      cwd: packageRoot,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        HOME: tempHome,
+        PATH: `${tempBin}:${process.env.PATH ?? ""}`,
+        XGC_SKIP_SELF_DISPATCH: "1"
+      }
+    }
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.ok(fs.existsSync(path.join(tempHome, ".local", "share", "xgc", "current", "bin", "xgc.mjs")));
+  assert.ok(fs.existsSync(path.join(tempHome, ".config", "xgc", "xgc-update.mjs")));
+  assert.ok(fs.existsSync(path.join(tempHome, ".config", "xgc", "install-state.json")));
+  assert.match(result.stderr, /Skipping live runtime validation for packaged install/);
+  assert.match(fs.readFileSync(copilotLog, "utf8"), /plugin install/);
+});
+
+test("xgc CLI help advertises npx-first install flow", () => {
+  const result = spawnSync("node", [path.join(repoRoot, "bin", "xgc.mjs"), "--help"], {
+    cwd: repoRoot,
+    encoding: "utf8"
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /npx x-for-github-copilot install/);
+  assert.match(result.stdout, /bunx x-for-github-copilot install/);
+  assert.match(result.stdout, /xgc <command>/);
+  assert.match(result.stdout, /xgc doctor/);
+  assert.match(result.stdout, /xgc uninstall --disable-only/);
+});
+
+test("release manifest records the prebuilt runtime tarball contract", () => {
+  const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "xgc-release-manifest-"));
+  const checksum = "a".repeat(64);
+  const result = spawnSync(
+    "npm",
+    [
+      "run",
+      "--silent",
+      "release:manifest",
+      "--",
+      "--version",
+      "9.8.7",
+      "--tag",
+      "v9.8.7",
+      "--repo",
+      "owner/repo",
+      "--output-dir",
+      outputDir,
+      "--npm-package-sha256",
+      checksum
+    ],
+    { cwd: repoRoot, encoding: "utf8" }
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  const manifest = JSON.parse(fs.readFileSync(path.join(outputDir, "release-manifest.json"), "utf8")) as {
+    tarballUrl: string;
+    npmPackageSha256: string;
+    installedRuntime?: { prebuilt?: boolean; requiresNpmInstall?: boolean; runtimeDistDir?: string };
+  };
+  assert.equal(manifest.tarballUrl, "https://github.com/owner/repo/releases/download/v9.8.7/x-for-github-copilot-9.8.7.tgz");
+  assert.equal(manifest.npmPackageSha256, checksum);
+  assert.equal(manifest.installedRuntime?.prebuilt, true);
+  assert.equal(manifest.installedRuntime?.requiresNpmInstall, false);
+  assert.equal(manifest.installedRuntime?.runtimeDistDir, "runtime-dist");
+});
+
+test("runtime-dist generation is checked into source and strips installed-runtime tsx loaders", () => {
+  const result = spawnSync("node", [path.join(repoRoot, "scripts", "generate-runtime-dist.mjs"), "--check"], {
+    cwd: repoRoot,
+    encoding: "utf8"
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  for (const file of [
+    "runtime-dist/materialize-global-xgc.mjs",
+    "runtime-dist/validate-global-xgc.mjs",
+    "runtime-dist/xgc-update.mjs"
+  ]) {
+    const content = fs.readFileSync(path.join(repoRoot, file), "utf8");
+    assert.match(content, /Generated by scripts\/generate-runtime-dist\.mjs/);
+    assert.doesNotMatch(content, /--import[ =]tsx/);
+  }
+});
+
+test("release workflow publishes the npm package and guards tag/package/runtime drift", () => {
+  const workflow = fs.readFileSync(path.join(repoRoot, ".github", "workflows", "release.yml"), "utf8");
+  assert.match(workflow, /Verify tag matches package version/);
+  assert.match(workflow, /Run validation/);
+  assert.match(workflow, /git diff --exit-code -- runtime-dist/);
+  assert.match(workflow, /Check npm publication status/);
+  assert.match(workflow, /already_published=true/);
+  assert.match(workflow, /mkdir -p release-assets/);
+  assert.match(workflow, /if: steps\.npm_status\.outputs\.already_published != 'true'/);
+  assert.match(workflow, /npm publish --provenance --access public/);
+  assert.match(workflow, /NODE_AUTH_TOKEN/);
 });
 
 test("session bundle report synthesizes SESSION_RESULTS and SESSION_MATRIX without packaging", () => {
@@ -1643,6 +1932,8 @@ test("validate global reports repair command for shell shim materialization drif
 
   assert.notEqual(validate.status, 0);
   assert.match(validate.stderr, /profile shell shim content drifted/);
+  assert.match(validate.stderr, /xgc install/);
+  assert.match(validate.stderr, /xgc doctor/);
   assert.match(validate.stderr, /npm run materialize:global/);
   assert.match(validate.stderr, /npm run validate:global/);
 });

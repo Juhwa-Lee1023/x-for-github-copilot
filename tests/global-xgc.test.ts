@@ -18,6 +18,7 @@ const sanitizedXgcEnvPrelude = [
   "unset XGC_COPILOT_PROFILE_HOME",
   "unset XGC_COPILOT_CONFIG_HOME",
   "unset COPILOT_HOME",
+  "unset XGC_RUNTIME_HOME",
   "unset XGC_PROFILE_ENV_FILE",
   "unset XGC_ENV_FILE",
   "unset XGC_SESSION_ENV_FILE",
@@ -166,7 +167,9 @@ function createMinimalRepoFixture() {
   const tempRepo = fs.mkdtempSync(path.join(os.tmpdir(), "xgc-global-repo-"));
   fs.cpSync(path.join(repoRoot, "source"), path.join(tempRepo, "source"), { recursive: true });
   fs.cpSync(path.join(repoRoot, ".github"), path.join(tempRepo, ".github"), { recursive: true });
+  fs.cpSync(path.join(repoRoot, "skills"), path.join(tempRepo, "skills"), { recursive: true });
   fs.cpSync(path.join(repoRoot, "hooks"), path.join(tempRepo, "hooks"), { recursive: true });
+  fs.cpSync(path.join(repoRoot, "runtime-dist"), path.join(tempRepo, "runtime-dist"), { recursive: true });
   fs.cpSync(path.join(repoRoot, "scripts", "hooks"), path.join(tempRepo, "scripts", "hooks"), { recursive: true });
   fs.copyFileSync(path.join(repoRoot, "scripts", "xgc-shell.sh"), path.join(tempRepo, "scripts", "xgc-shell.sh"));
   fs.copyFileSync(path.join(repoRoot, "scripts", "xgc-update.mjs"), path.join(tempRepo, "scripts", "xgc-update.mjs"));
@@ -242,7 +245,7 @@ test("materializeGlobalProfile creates a dedicated XGC profile with user-level a
   );
   assert.equal(
     fs.readFileSync(result.paths.updaterScriptPath, "utf8"),
-    fs.readFileSync(path.join(tempRepo, "scripts", "xgc-update.mjs"), "utf8")
+    fs.readFileSync(path.join(tempRepo, "runtime-dist", "xgc-update.mjs"), "utf8")
   );
   assert.ok(fs.existsSync(result.configPath));
   assert.ok(fs.existsSync(result.mcpConfigPath));
@@ -305,6 +308,9 @@ test("writeGlobalInstallState records update track and policy metadata", () => {
   assert.equal(installState.updatePolicy, "patch-within-track");
   assert.equal(installState.autoUpdateMode, "check");
   assert.equal(installState.permissionMode, "work");
+  assert.equal(installState.runtimeHome, paths.runtimeHome);
+  assert.equal(installState.runtimeCurrentPath, paths.runtimeCurrentPath);
+  assert.equal(installState.runtimeCurrentBinPath, paths.runtimeCurrentBinPath);
 });
 
 test("writeGlobalShellEnv preserves an existing raw Copilot binary when re-materialized without an explicit raw path", () => {
@@ -316,9 +322,51 @@ test("writeGlobalShellEnv preserves an existing raw Copilot binary when re-mater
   writeGlobalShellEnv({ paths, rawCopilotBin: null, permissionMode: "ask" });
 
   const profileEnv = fs.readFileSync(paths.shellEnvPath, "utf8");
+  assert.match(profileEnv, new RegExp(`XGC_RUNTIME_HOME=${shellQuote(paths.runtimeCurrentPath).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
   assert.match(profileEnv, /XGC_PERMISSION_MODE='ask'/);
   assert.match(profileEnv, /XGC_AUTO_UPDATE_MODE='check'/);
   assert.match(profileEnv, new RegExp(`XGC_COPILOT_RAW_BIN=${shellQuote(rawBin).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+});
+
+test("xgc management subcommands dispatch to the installed runtime CLI", () => {
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "xgc-shell-runtime-cli-"));
+  const rawBin = createFakeRawCopilot(tempHome);
+  const runtimeHome = path.join(tempHome, ".local", "share", "xgc", "current");
+  const runtimeBin = path.join(runtimeHome, "bin");
+  const capturePath = path.join(tempHome, "runtime-cli-call.json");
+  fs.mkdirSync(runtimeBin, { recursive: true });
+  fs.writeFileSync(
+    path.join(runtimeBin, "xgc.mjs"),
+    [
+      "#!/usr/bin/env node",
+      "import fs from 'node:fs';",
+      "const payload = { argv: process.argv.slice(2), cwd: process.cwd() };",
+      `fs.writeFileSync(${JSON.stringify(capturePath)}, JSON.stringify(payload));`,
+      "process.stdout.write(JSON.stringify(payload));"
+    ].join("\n")
+  );
+  fs.chmodSync(path.join(runtimeBin, "xgc.mjs"), 0o755);
+
+  const result = spawnSync(
+    "bash",
+    [
+      "-lc",
+      [
+        sanitizedXgcEnvPrelude,
+        `export HOME=${shellQuote(tempHome)}`,
+        `export XGC_COPILOT_RAW_BIN=${shellQuote(rawBin)}`,
+        `export XGC_RUNTIME_HOME=${shellQuote(runtimeHome)}`,
+        `source ${shellQuote(path.join(repoRoot, "scripts/xgc-shell.sh"))}`,
+        "xgc doctor --json"
+      ].join("; ")
+    ],
+    { encoding: "utf8" }
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  const payload = JSON.parse(fs.readFileSync(capturePath, "utf8")) as { argv: string[]; cwd: string };
+  assert.deepEqual(payload.argv, ["doctor", "--json"]);
+  assert.equal(payload.cwd, repoRoot);
 });
 
 test("writeGlobalShellEnv drops stale preserved raw Copilot binary values", () => {
@@ -482,7 +530,7 @@ test("validate global fails when any materialized hook script is missing", async
 
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /profile hook scripts file set drifted/);
-  assert.match(result.stderr, /npm run materialize:global/);
+  assert.match(result.stderr, /xgc install/);
 });
 
 test("validate global fails when profile.env redirects dedicated profile homes", async () => {
@@ -516,7 +564,7 @@ test("validate global fails when profile.env redirects dedicated profile homes",
 
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /profile\.env must not redirect XGC_COPILOT_PROFILE_HOME/);
-  assert.match(result.stderr, /npm run materialize:global/);
+  assert.match(result.stderr, /xgc install/);
 });
 
 test("materializeGlobalProfile drops existing active profile root model for TUI-selected root models", async () => {
@@ -2008,18 +2056,18 @@ test("xgc convenience wrappers target the expected specialist lanes", () => {
   );
 });
 
-test("xgc_update dispatches to the installed updater script", () => {
+test("xgc_update dispatches to the installed runtime CLI update command", () => {
   const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "xgc-shell-update-wrapper-"));
-  const updaterDir = path.join(tempHome, ".config", "xgc");
-  const updaterPath = path.join(updaterDir, "xgc-update.mjs");
-  fs.mkdirSync(updaterDir, { recursive: true });
+  const runtimeBinDir = path.join(tempHome, ".local", "share", "xgc", "current", "bin");
+  fs.mkdirSync(runtimeBinDir, { recursive: true });
   fs.writeFileSync(
-    updaterPath,
+    path.join(runtimeBinDir, "xgc.mjs"),
     [
       "import fs from 'node:fs';",
       "fs.writeFileSync(process.env.XGC_TEST_UPDATE_CAPTURE, JSON.stringify(process.argv.slice(2)));"
     ].join("\n")
   );
+  fs.chmodSync(path.join(runtimeBinDir, "xgc.mjs"), 0o755);
 
   const capturePath = path.join(tempHome, "update-args.json");
   const result = spawnSync(
@@ -2038,7 +2086,7 @@ test("xgc_update dispatches to the installed updater script", () => {
   );
 
   assert.equal(result.status, 0, result.stderr);
-  assert.deepEqual(JSON.parse(fs.readFileSync(capturePath, "utf8")) as string[], ["--home-dir", tempHome, "--check"]);
+  assert.deepEqual(JSON.parse(fs.readFileSync(capturePath, "utf8")) as string[], ["update", "--check"]);
 });
 
 test("interactive zsh sourcing does not keep the background updater in the shell job list", () => {

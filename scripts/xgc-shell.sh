@@ -144,6 +144,7 @@ export XGC_ENV_FILE
 export XGC_HOOK_SCRIPT_ROOT
 export XGC_PERMISSION_MODE="${XGC_PERMISSION_MODE:-ask}"
 export XGC_AUTO_UPDATE_MODE="${XGC_AUTO_UPDATE_MODE:-check}"
+export XGC_RUNTIME_HOME="${XGC_RUNTIME_HOME:-$HOME/.local/share/xgc/current}"
 
 xgc__resolve_raw_copilot_bin() {
   local candidates=""
@@ -299,6 +300,36 @@ xgc__extract_prompt_value() {
   xgc__extract_flag_value "--prompt" "$@" && return 0
   xgc__extract_flag_value "-p" "$@" && return 0
   return 1
+}
+
+xgc__is_runtime_cli_subcommand() {
+  case "${1:-}" in
+    install|doctor|update|uninstall|status|help|--help|-h)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+xgc__runtime_cli_bin() {
+  local runtime_home="${XGC_RUNTIME_HOME:-$HOME/.local/share/xgc/current}"
+  local cli="$runtime_home/bin/xgc.mjs"
+  [[ -f "$cli" ]] || return 1
+  printf '%s\n' "$cli"
+}
+
+xgc__dispatch_runtime_cli() {
+  local cli=""
+  cli="$(xgc__runtime_cli_bin)" || {
+    echo "Installed X for GitHub Copilot runtime CLI is missing." >&2
+    echo "Run: npx x-for-github-copilot install" >&2
+    return 1
+  }
+  command -v node >/dev/null 2>&1 || {
+    echo "node is required for xgc ${1:-command}" >&2
+    return 1
+  }
+  XGC_SKIP_SELF_DISPATCH=1 node "$cli" "$@"
 }
 
 xgc__agent_skips_github_context() {
@@ -793,6 +824,10 @@ copilot() {
 }
 
 xgc() {
+  if xgc__is_runtime_cli_subcommand "${1:-}"; then
+    xgc__dispatch_runtime_cli "$@"
+    return $?
+  fi
   xgc__invoke "repo-master" "$@"
 }
 
@@ -837,17 +872,7 @@ xgc_mode() {
 }
 
 xgc_update() {
-  local updater="$XGC_COPILOT_CONFIG_HOME/xgc-update.mjs"
-  if [[ ! -f "$updater" ]]; then
-    echo "X for GitHub Copilot update script is missing: $updater" >&2
-    echo "Run: bash scripts/install-global-xgc.sh --write-shell-profile" >&2
-    return 1
-  fi
-  command -v node >/dev/null 2>&1 || {
-    echo "node is required for xgc_update" >&2
-    return 1
-  }
-  node "$updater" --home-dir "$HOME" "$@"
+  xgc__dispatch_runtime_cli update "$@"
 }
 
 xgc__spawn_detached() {

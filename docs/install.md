@@ -11,13 +11,61 @@ X for GitHub Copilot currently supports GitHub Copilot CLI workflows through a d
 - Node.js 20+
 - GitHub Copilot CLI installed and authenticated
 
-## Recommended Install: Global X for GitHub Copilot Mode
+## Recommended Install: npx Global X for GitHub Copilot Mode
+
+```bash
+npx x-for-github-copilot install
+```
+
+This is the primary user-facing install path.
+
+Equivalent Bun entry:
+
+```bash
+bunx x-for-github-copilot install
+```
+
+Both commands run the packaged XGC runtime and install the same dedicated profile/shim layout. `npx` is the primary recommendation because GitHub Copilot CLI users are more likely to already have Node/npm than Bun.
+
+## What The Packaged Install Does
+
+The package-based install flow:
+
+- uses the packaged runtime instead of asking the user to clone the repo first
+- materializes `~/.copilot-xgc` and `~/.config/xgc`
+- installs the plugin from the packaged runtime bundle
+- appends the shell activation block by default
+- asks which permission mode to persist unless you pass `--permission-mode`
+- leaves plain `copilot` as the practical front door after a fresh shell reload
+
+Validation after package install:
+
+```bash
+npx x-for-github-copilot doctor
+```
+
+After install, the preferred management path is the installed runtime from a sourced shell:
+
+```bash
+xgc doctor
+xgc update --check
+xgc update
+xgc uninstall --disable-only
+xgc uninstall --reset-raw-config --clear-raw-state
+xgc status
+```
+
+The `npx`/`bunx` entrypoints remain valid for first install and fallback use, but daily operator management should not require a repo checkout.
+
+## Developer / Repo-Checkout Install
+
+If you are developing the project locally or intentionally want the repo-checkout path, use:
 
 ```bash
 bash scripts/install-global-xgc.sh --write-shell-profile
 ```
 
-This install flow is the practical daily-use default. It:
+This repo-checkout install flow:
 
 - prepares the workspace and installs repo dependencies
 - regenerates runtime mirrors from [source/](../source)
@@ -70,12 +118,12 @@ That means a `0.1.x` install can auto-apply `0.1.y`, but it should not auto-jump
 Useful commands:
 
 ```bash
-xgc_update --check
-xgc_update
+xgc update --check
+xgc update
 ```
 
-- `xgc_update --check` checks the latest compatible GitHub release for the current installed track
-- `xgc_update` applies the latest compatible release and re-materializes the profile
+- `xgc update --check` checks the latest compatible GitHub release for the current installed track
+- `xgc update` applies the latest compatible release and re-materializes the profile
 
 The default install state uses `autoUpdateMode: check`, so the project is prepared for safe compatibility checks first rather than unattended upgrades.
 
@@ -126,7 +174,7 @@ xgc_mode yolo
 
 ## Shell Activation And Preview Mode
 
-The recommended install command passes `--write-shell-profile`, so it appends the X for GitHub Copilot shell activation block after creating a backup. That is what makes plain `copilot` enter the X for GitHub Copilot global front door automatically in new shells.
+The recommended package command and the repo-checkout command both append the X for GitHub Copilot shell activation block after creating a backup. That is what makes plain `copilot` enter the X for GitHub Copilot global front door automatically in new shells.
 
 ## Start Using It After Install
 
@@ -173,7 +221,7 @@ Preview-only mode shows:
 - the exact block it would append
 - how to activate manually
 
-If you already installed preview-only and want to append the activation block later:
+If you already installed preview-only from a repo checkout and want to append the activation block later:
 
 ```bash
 bash scripts/install-global-xgc.sh --write-shell-profile
@@ -186,7 +234,7 @@ There are three distinct cases:
 ### 1. Disable XGC shell activation, but keep the installed profile
 
 ```bash
-bash scripts/uninstall-global-xgc.sh --disable-only
+npx x-for-github-copilot uninstall --disable-only
 ```
 
 Use this when you want plain raw `copilot` in new shells but you do not want to delete `~/.copilot-xgc` or `~/.config/xgc`.
@@ -194,7 +242,7 @@ Use this when you want plain raw `copilot` in new shells but you do not want to 
 ### 2. Uninstall the dedicated XGC profile/config homes
 
 ```bash
-bash scripts/uninstall-global-xgc.sh
+npx x-for-github-copilot uninstall
 ```
 
 This removes the shell activation block plus:
@@ -207,7 +255,7 @@ It leaves your raw `~/.copilot/config.json` alone unless you also request a raw 
 ### 3. Return to login-only raw Copilot CLI
 
 ```bash
-bash scripts/uninstall-global-xgc.sh --reset-raw-config --clear-raw-state
+npx x-for-github-copilot uninstall --reset-raw-config --clear-raw-state
 ```
 
 This is the strongest raw revert path. It:

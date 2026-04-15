@@ -47,6 +47,7 @@ function createFreshRepoFixture() {
   fs.cpSync(path.join(repoRoot, "source"), path.join(tempRepo, "source"), { recursive: true });
   fs.cpSync(path.join(repoRoot, ".github"), path.join(tempRepo, ".github"), { recursive: true });
   fs.cpSync(path.join(repoRoot, "hooks"), path.join(tempRepo, "hooks"), { recursive: true });
+  fs.cpSync(path.join(repoRoot, "runtime-dist"), path.join(tempRepo, "runtime-dist"), { recursive: true });
   fs.mkdirSync(path.join(tempRepo, "scripts"), { recursive: true });
   fs.cpSync(path.join(repoRoot, "scripts", "hooks"), path.join(tempRepo, "scripts", "hooks"), { recursive: true });
   fs.copyFileSync(path.join(repoRoot, "scripts", "xgc-shell.sh"), path.join(tempRepo, "scripts", "xgc-shell.sh"));
@@ -241,7 +242,7 @@ async function main() {
   );
   assert.equal(
     fs.readFileSync(result.paths.updaterScriptPath, "utf8"),
-    fs.readFileSync(path.join(tempRepo, "scripts", "xgc-update.mjs"), "utf8"),
+    fs.readFileSync(path.join(tempRepo, "runtime-dist", "xgc-update.mjs"), "utf8"),
     "profile updater script drifted from repo source"
   );
   for (const agentId of ["visual-forge", "writing-desk", "multimodal-look", "artistry-studio"]) {

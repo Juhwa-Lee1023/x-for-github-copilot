@@ -62,10 +62,10 @@ function listFilesRecursive(root: string) {
 function globalRepairHint(label: string) {
   return [
     `${label} drift repair:`,
-    "  npm run materialize:global",
-    "  npm run validate:global",
-    "If plugin registration itself is missing, rerun:",
-    "  bash scripts/install-global-xgc.sh"
+    "  xgc install",
+    "  xgc doctor",
+    "Repo-checkout development alternative:",
+    "  npm run materialize:global && npm run validate:global"
   ].join("\n");
 }
 
@@ -157,6 +157,7 @@ function runShellCall(opts: {
   profileHome: string;
   configHome: string;
   fnCall: string;
+  cwd?: string;
 }) {
   const result = spawnSync(
     "bash",
@@ -179,12 +180,23 @@ function runShellCall(opts: {
       ].join("; ")
     ],
     {
-      encoding: "utf8"
+      encoding: "utf8",
+      cwd: opts.cwd
     }
   );
 
   assert.equal(result.status, 0, `shell shim invocation failed: ${opts.fnCall}\n${result.stderr}`);
   return JSON.parse(result.stdout.trim()) as { argv: string[]; copilotHome: string | null };
+}
+
+function createGitHubRemoteWorkspace() {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "xgc-validate-github-workspace-"));
+  spawnSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+  spawnSync("git", ["remote", "add", "origin", "https://github.com/example/xgc.git"], {
+    cwd: workspace,
+    stdio: "ignore"
+  });
+  return workspace;
 }
 
 function main() {
@@ -318,6 +330,7 @@ function main() {
 
   const fakeRoot = fs.mkdtempSync(path.join(os.tmpdir(), "xgc-shell-validate-"));
   const fakeRaw = createFakeCopilot(fakeRoot);
+  const githubWorkspace = createGitHubRemoteWorkspace();
   const injectedContextFlags = new Set([
     "--disable-builtin-mcps",
     "--disable-mcp-server=github-mcp-server",
@@ -425,7 +438,8 @@ function main() {
     rawBin: fakeRaw,
     profileHome: paths.profileHome,
     configHome: paths.configHome,
-    fnCall: "xgc_review --prompt 'hi'"
+    fnCall: "xgc_review --prompt 'hi'",
+    cwd: githubWorkspace
   });
   assert.equal(shortcutCall.copilotHome, paths.profileHome);
   assert.deepEqual(withoutInjectedFlags(shortcutCall.argv).slice(0, 2), ["--agent", "merge-gate"]);

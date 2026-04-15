@@ -9,6 +9,22 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+xgc_require_runtime_node_entry() {
+  local compiled_path="$REPO_ROOT/runtime-dist/$1"
+  if [[ -f "$compiled_path" ]]; then
+    printf '%s\n' "$compiled_path"
+    return 0
+  fi
+  echo "Missing packaged runtime entry: $compiled_path" >&2
+  if [[ "${packaged_runtime:-0}" == "1" ]]; then
+    echo "This packaged release is incomplete. Reinstall with: npx x-for-github-copilot install" >&2
+    echo "If XGC is already installed, try: xgc update" >&2
+  else
+    echo "Run: npm run generate:runtime-dist" >&2
+  fi
+  return 1
+}
+
 resolve_raw_copilot_bin() {
   if [[ -n "${XGC_COPILOT_RAW_BIN:-}" ]]; then
     if [[ -x "${XGC_COPILOT_RAW_BIN}" ]]; then
@@ -256,7 +272,13 @@ install_global_xgc_main() {
   local run_runtime_validation=0
   local write_shell_profile=0
   local legacy_skip_profile_source=0
+  local packaged_runtime=0
   local permission_mode="${XGC_PERMISSION_MODE:-}"
+  local release_repo="${GITHUB_REPOSITORY:-Juhwa-Lee1023/x-for-github-copilot}"
+  local release_tag=""
+  local update_track=""
+  local update_channel="stable"
+  local auto_update_mode="${XGC_AUTO_UPDATE_MODE:-check}"
   local bootstrap_args=()
 
   while [[ $# -gt 0 ]]; do
@@ -272,6 +294,30 @@ install_global_xgc_main() {
       --skip-profile-source)
         legacy_skip_profile_source=1
         shift
+        ;;
+      --packaged-runtime)
+        packaged_runtime=1
+        shift
+        ;;
+      --release-repo)
+        release_repo="${2:-}"
+        shift 2
+        ;;
+      --release-tag)
+        release_tag="${2:-}"
+        shift 2
+        ;;
+      --update-track)
+        update_track="${2:-}"
+        shift 2
+        ;;
+      --update-channel)
+        update_channel="${2:-}"
+        shift 2
+        ;;
+      --auto-update-mode)
+        auto_update_mode="${2:-}"
+        shift 2
         ;;
       --permission-mode)
         if [[ -z "${2:-}" ]] || ! xgc_valid_permission_mode "$2"; then
@@ -296,8 +342,13 @@ install_global_xgc_main() {
     esac
   done
 
-  if ! command -v npm >/dev/null 2>&1; then
-    echo "npm is required to install global X for GitHub Copilot mode." >&2
+  if ! command -v node >/dev/null 2>&1; then
+    echo "node is required to install global X for GitHub Copilot mode." >&2
+    exit 1
+  fi
+
+  if [[ $packaged_runtime -eq 0 ]] && ! command -v npm >/dev/null 2>&1; then
+    echo "npm is required for the repo-checkout install path." >&2
     exit 1
   fi
 
@@ -323,18 +374,46 @@ install_global_xgc_main() {
     fi
   fi
 
-  bash "$REPO_ROOT/scripts/setup-workspace.sh"
-  if [[ ${#bootstrap_args[@]} -gt 0 ]]; then
-    bash "$REPO_ROOT/scripts/bootstrap-xgc-stack.sh" "${bootstrap_args[@]}"
-  else
-    bash "$REPO_ROOT/scripts/bootstrap-xgc-stack.sh"
+  local install_source="repo-checkout"
+  if [[ $packaged_runtime -eq 1 ]]; then
+    install_source="npm-package"
   fi
 
-  npm exec --prefix "$REPO_ROOT" -- tsx "$REPO_ROOT/scripts/materialize-global-xgc.ts" \
-    --repo-root "$REPO_ROOT" \
-    --home-dir "$HOME" \
-    --raw-copilot-bin "$raw_copilot_bin" \
+  if [[ $packaged_runtime -eq 1 ]]; then
+    chmod +x "$REPO_ROOT"/scripts/*.sh
+    chmod +x "$REPO_ROOT"/scripts/hooks/*.sh
+    echo "Using packaged XGC runtime from: $REPO_ROOT"
+  else
+    bash "$REPO_ROOT/scripts/setup-workspace.sh"
+    if [[ ${#bootstrap_args[@]} -gt 0 ]]; then
+      bash "$REPO_ROOT/scripts/bootstrap-xgc-stack.sh" "${bootstrap_args[@]}"
+    else
+      bash "$REPO_ROOT/scripts/bootstrap-xgc-stack.sh"
+    fi
+  fi
+
+  local materialize_args=(
+    --repo-root "$REPO_ROOT"
+    --home-dir "$HOME"
+    --raw-copilot-bin "$raw_copilot_bin"
     --permission-mode "$permission_mode"
+    --install-source "$install_source"
+    --release-repo "$release_repo"
+    --update-channel "$update_channel"
+    --auto-update-mode "$auto_update_mode"
+  )
+  if [[ -n "$release_tag" ]]; then
+    materialize_args+=(--release-tag "$release_tag")
+  fi
+  if [[ -n "$update_track" ]]; then
+    materialize_args+=(--update-track "$update_track")
+  fi
+
+  if [[ $packaged_runtime -eq 1 ]]; then
+    node "$(xgc_require_runtime_node_entry "materialize-global-xgc.mjs")" "${materialize_args[@]}"
+  else
+    npm exec --prefix "$REPO_ROOT" -- tsx "$REPO_ROOT/scripts/materialize-global-xgc.ts" "${materialize_args[@]}"
+  fi
 
   local config_home="$HOME/.config/xgc"
   local profile_home="$HOME/.copilot-xgc"
@@ -378,8 +457,19 @@ install_global_xgc_main() {
   echo "  xgc_mode ask|work|yolo - change the current shell permission mode"
   echo
   echo "Later, if you want raw Copilot again:"
-  echo "  bash scripts/uninstall-global-xgc.sh --disable-only"
-  echo "  bash scripts/uninstall-global-xgc.sh --reset-raw-config --clear-raw-state"
+  if [[ $packaged_runtime -eq 1 ]]; then
+    echo "  xgc uninstall --disable-only"
+    echo "  xgc uninstall --reset-raw-config --clear-raw-state"
+    echo
+    echo "Installed-runtime maintenance commands:"
+    echo "  xgc doctor"
+    echo "  xgc update --check"
+    echo "  xgc update"
+    echo "  xgc status"
+  else
+    echo "  bash scripts/uninstall-global-xgc.sh --disable-only"
+    echo "  bash scripts/uninstall-global-xgc.sh --reset-raw-config --clear-raw-state"
+  fi
   echo
   echo "Verify shell activation in a new interactive shell, for example: zsh -ic 'type copilot; copilot --version'"
   echo "Do not use 'zsh -l -c' as the activation check on macOS; .zshrc is interactive-shell startup state."
@@ -387,12 +477,23 @@ install_global_xgc_main() {
   echo "Convenience wrappers: xgc, xgc_scout, xgc_plan, xgc_triage, xgc_patch, xgc_review, xgc_check"
 
   if [[ $run_runtime_validation -eq 1 ]]; then
-    npm run --prefix "$REPO_ROOT" validate:runtime
+    if [[ $packaged_runtime -eq 1 ]]; then
+      echo "Skipping live runtime validation for packaged install; it requires repo-checkout dev tooling." >&2
+      echo "Packaged validation continues with: xgc doctor / runtime-dist validate-global-xgc." >&2
+    else
+      npm run --prefix "$REPO_ROOT" validate:runtime
+    fi
   fi
 
-  npm exec --prefix "$REPO_ROOT" -- tsx "$REPO_ROOT/scripts/validate-global-xgc.ts" \
-    --repo-root "$REPO_ROOT" \
-    --home-dir "$HOME"
+  if [[ $packaged_runtime -eq 1 ]]; then
+    node "$(xgc_require_runtime_node_entry "validate-global-xgc.mjs")" \
+      --repo-root "$REPO_ROOT" \
+      --home-dir "$HOME"
+  else
+    npm exec --prefix "$REPO_ROOT" -- tsx "$REPO_ROOT/scripts/validate-global-xgc.ts" \
+      --repo-root "$REPO_ROOT" \
+      --home-dir "$HOME"
+  fi
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
