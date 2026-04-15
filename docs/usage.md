@@ -35,13 +35,13 @@ Use `copilot_raw` when you want the raw GitHub Copilot CLI behavior with no X fo
 If you want to stop loading the XGC shell shim in new terminals, use:
 
 ```bash
-bash scripts/uninstall-global-xgc.sh --disable-only
+xgc uninstall --disable-only
 ```
 
 If you want to return to login-only raw Copilot CLI state, use:
 
 ```bash
-bash scripts/uninstall-global-xgc.sh --reset-raw-config --clear-raw-state
+xgc uninstall --reset-raw-config --clear-raw-state
 ```
 
 ## Recommended Entrypoints
@@ -64,8 +64,16 @@ bash scripts/uninstall-global-xgc.sh --reset-raw-config --clear-raw-state
   X for GitHub Copilot profile + `required-check`
 - `xgc_mode`
   switches the current shell between `ask`, `work`, and `yolo` Copilot permission modes
-- `xgc_update`
+- `xgc doctor`
+  validates the installed runtime/profile state
+- `xgc update`
   checks or applies the latest compatible X for GitHub Copilot release for the current install track
+- `xgc uninstall`
+  disables shell activation or clears the installed runtime/profile state
+- `xgc status`
+  prints the installed runtime summary
+- `xgc_update`
+  compatibility alias for `xgc update`
 - `xgc_preflight`
   optional live prompt-readiness check for the X for GitHub Copilot profile before long real TUI sessions
 - `copilot_raw`
@@ -74,7 +82,7 @@ bash scripts/uninstall-global-xgc.sh --reset-raw-config --clear-raw-state
 If background updater notifications in zsh are undesirable for a period, disable the shell shim instead of treating raw Copilot as broken:
 
 ```bash
-bash scripts/uninstall-global-xgc.sh --disable-only
+npx x-for-github-copilot uninstall --disable-only
 ```
 
 ## Specialist Roles
@@ -164,11 +172,11 @@ Default compatibility rules:
 Practical commands:
 
 ```bash
-xgc_update --check
-xgc_update
+xgc update --check
+xgc update
 ```
 
-`xgc_update --check` reports the newest compatible release for the current track. `xgc_update` downloads that compatible release from GitHub, re-materializes the dedicated profile, and refreshes the installed shell/update surfaces.
+`xgc update --check` reports the newest compatible release for the current track. `xgc update` downloads that compatible release from GitHub, re-materializes the dedicated profile, and refreshes the installed shell/update surfaces.
 
 With the default `autoUpdateMode: check`, interactive shells also perform a quiet once-per-day compatible release check in the background. Setting `autoUpdateMode: apply` upgrades only within the current compatibility track.
 
@@ -229,10 +237,10 @@ echo "$XGC_COPILOT_PROFILE_HOME"
 If needed, repair and re-activate:
 
 ```bash
-npm run validate:global
+npx x-for-github-copilot doctor
 npm run repair:raw-hooks -- --dry-run
 npm run repair:raw-hooks
-bash scripts/install-global-xgc.sh --write-shell-profile
+npx x-for-github-copilot install
 source ~/.config/xgc/xgc-shell.sh
 ```
 

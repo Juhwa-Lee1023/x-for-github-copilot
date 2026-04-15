@@ -17,7 +17,7 @@ X for GitHub Copilot is currently designed for **GitHub Copilot CLI** workflows.
 Copy and paste this prompt into your current coding agent:
 
 ```text
-Install and configure X for GitHub Copilot by following the installation guide in https://github.com/Juhwa-Lee1023/x-for-github-copilot/blob/main/docs/install.md. Clone the repository, ask me which default permission mode to persist (`ask`, `work`, or `yolo`), then run `bash scripts/install-global-xgc.sh --write-shell-profile --permission-mode <my selection>`. After installation, verify in a fresh interactive shell that `type copilot` resolves to the X for GitHub Copilot shim, `copilot plugin list` shows `xgc`, and `npm run validate:global` passes. Then explain exactly how I start using it from a new shell: open a new terminal or run `exec zsh`, use plain `copilot` as the default front door, use `copilot_raw` to bypass XGC, and use `xgc_mode ask|work|yolo` to change the current shell mode. Report the exact commands, exit codes, validation results, and the short post-install usage notes.
+Install and configure X for GitHub Copilot by following the installation guide in https://github.com/Juhwa-Lee1023/x-for-github-copilot/blob/main/docs/install.md. Ask me which default permission mode to persist (`ask`, `work`, or `yolo`), then run `npx x-for-github-copilot install --permission-mode <my selection>`. After installation, verify in a fresh interactive shell that `type copilot` resolves to the X for GitHub Copilot shim, `copilot plugin list` shows `xgc`, and `npx x-for-github-copilot doctor` passes. Then explain exactly how I start using it from a new shell: open a new terminal or run `exec zsh`, use plain `copilot` as the default front door, use `copilot_raw` to bypass XGC, and use `xgc_mode ask|work|yolo` to change the current shell mode. Report the exact commands, exit codes, validation results, and the short post-install usage notes.
 ```
 
 Or read the [installation guide](docs/install.md), but the recommended path is to let your coding agent do the setup and verification.
@@ -29,7 +29,7 @@ Read the installation guide and follow it:
 - [docs/install.md](docs/install.md)
 - [docs/usage.md](docs/usage.md)
 
-Preserve the user's selected permission mode and verify with `npm run validate:global` before claiming success.
+Prefer `npx x-for-github-copilot install` as the primary install path, keep `bunx x-for-github-copilot install` as the Bun equivalent, preserve the user's selected permission mode, and verify with `npx x-for-github-copilot doctor` before claiming success.
 
 ## Why This Exists
 

@@ -50,8 +50,8 @@ function parseArgs(argv: string[]) {
       index += 1;
     } else if (current === "--install-source" && argv[index + 1]) {
       const source = argv[index + 1];
-      if (source !== "repo-checkout" && source !== "release-artifact") {
-        throw new Error(`Invalid --install-source: ${source}. Expected repo-checkout or release-artifact.`);
+      if (source !== "repo-checkout" && source !== "release-artifact" && source !== "npm-package") {
+        throw new Error(`Invalid --install-source: ${source}. Expected repo-checkout, release-artifact, or npm-package.`);
       }
       args.installSource = source;
       index += 1;
@@ -89,7 +89,8 @@ try {
   });
   const result = await materializeGlobalProfile({
     repoRoot: args.repoRoot,
-    homeDir: args.homeDir
+    homeDir: args.homeDir,
+    requireRuntimeDist: args.installSource !== "repo-checkout"
   });
   writeGlobalShellEnv({
     paths,

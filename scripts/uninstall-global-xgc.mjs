@@ -1,0 +1,183 @@
+#!/usr/bin/env node
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { spawnSync } from "node:child_process";
+
+function parseArgs(argv) {
+  const args = {
+    homeDir: os.homedir(),
+    disableOnly: false,
+    resetRawConfig: false,
+    clearRawState: false,
+    help: false
+  };
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const current = argv[index];
+    if (current === "--home-dir" && argv[index + 1]) {
+      args.homeDir = path.resolve(argv[index + 1]);
+      index += 1;
+    } else if (current === "--disable-only") {
+      args.disableOnly = true;
+    } else if (current === "--reset-raw-config") {
+      args.resetRawConfig = true;
+    } else if (current === "--clear-raw-state") {
+      args.clearRawState = true;
+      args.resetRawConfig = true;
+    } else if (current === "--help" || current === "-h") {
+      args.help = true;
+    } else {
+      throw new Error(`Unknown argument: ${current}`);
+    }
+  }
+
+  return args;
+}
+
+function usage() {
+  return [
+    "Usage: xgc uninstall [--disable-only] [--reset-raw-config] [--clear-raw-state] [--home-dir HOME]",
+    "",
+    "Modes:",
+    "  --disable-only       Remove shell activation, keep ~/.copilot-xgc and ~/.config/xgc.",
+    "  default              Remove shell activation, ~/.copilot-xgc, and ~/.config/xgc.",
+    "  --reset-raw-config   Preserve only raw Copilot login fields in ~/.copilot/config.json.",
+    "  --clear-raw-state    Remove raw Copilot runtime state and recreate login-only config."
+  ].join("\n");
+}
+
+function timestamp() {
+  const now = new Date();
+  const pad = (value) => String(value).padStart(2, "0");
+  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+}
+
+function backupPathFor(backupRoot, sourcePath) {
+  const relative = path.resolve(sourcePath).replace(path.parse(path.resolve(sourcePath)).root, "");
+  return path.join(backupRoot, relative);
+}
+
+function backupCopy(sourcePath, backupRoot) {
+  if (!fs.existsSync(sourcePath)) {
+    return;
+  }
+  const destination = backupPathFor(backupRoot, sourcePath);
+  fs.mkdirSync(path.dirname(destination), { recursive: true });
+  fs.cpSync(sourcePath, destination, { recursive: true, force: true });
+}
+
+function backupMove(sourcePath, backupRoot) {
+  if (!fs.existsSync(sourcePath)) {
+    return;
+  }
+  const destination = backupPathFor(backupRoot, sourcePath);
+  fs.mkdirSync(path.dirname(destination), { recursive: true });
+  fs.renameSync(sourcePath, destination);
+}
+
+function readJsonIfExists(filePath) {
+  if (!fs.existsSync(filePath)) {
+    return {};
+  }
+  try {
+    return JSON.parse(fs.readFileSync(filePath, "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+function loginOnlyConfig(rawConfigPath) {
+  const raw = readJsonIfExists(rawConfigPath);
+  const next = {};
+  if (raw.last_logged_in_user) {
+    next.last_logged_in_user = raw.last_logged_in_user;
+  }
+  if (Array.isArray(raw.logged_in_users)) {
+    next.logged_in_users = raw.logged_in_users;
+  }
+  return next;
+}
+
+function writeJson(filePath, payload) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, `${JSON.stringify(payload, null, 2)}\n`);
+}
+
+function removeShellBlock(filePath) {
+  if (!fs.existsSync(filePath)) {
+    return false;
+  }
+  const original = fs.readFileSync(filePath, "utf8");
+  const next = original
+    .replace(/\n?# >>> xgc global mode >>>[\s\S]*?# <<< xgc global mode <<<\n?/g, "\n")
+    .replace(/\n{3,}/g, "\n\n");
+  if (next === original) {
+    return false;
+  }
+  fs.writeFileSync(filePath, next);
+  return true;
+}
+
+function killBestEffort(pattern) {
+  spawnSync("pkill", ["-f", pattern], { stdio: "ignore" });
+}
+
+function main() {
+  const args = parseArgs(process.argv.slice(2));
+  if (args.help) {
+    console.log(usage());
+    return;
+  }
+
+  const homeDir = path.resolve(args.homeDir);
+  const backupRoot = path.join(homeDir, `xgc-uninstall-backup-${timestamp()}`);
+  fs.mkdirSync(backupRoot, { recursive: true });
+
+  const rawCopilotHome = path.join(homeDir, ".copilot");
+  const rawConfigPath = path.join(rawCopilotHome, "config.json");
+  const loginConfig = loginOnlyConfig(rawConfigPath);
+
+  killBestEffort("copilot-darwin-arm64/copilot");
+  killBestEffort("/opt/homebrew/bin/copilot");
+  killBestEffort("xgc-update.mjs");
+
+  for (const startupFile of [".zshrc", ".zprofile", ".bashrc", ".bash_profile"].map((file) => path.join(homeDir, file))) {
+    if (fs.existsSync(startupFile) && removeShellBlock(startupFile)) {
+      backupCopy(startupFile, backupRoot);
+    }
+  }
+
+  if (!args.disableOnly) {
+    backupMove(path.join(homeDir, ".copilot-xgc"), backupRoot);
+    backupMove(path.join(homeDir, ".config", "xgc"), backupRoot);
+  }
+
+  if (args.clearRawState) {
+    backupMove(rawCopilotHome, backupRoot);
+    writeJson(rawConfigPath, loginConfig);
+  } else if (args.resetRawConfig) {
+    backupCopy(rawConfigPath, backupRoot);
+    writeJson(rawConfigPath, loginConfig);
+  }
+
+  console.log("X for GitHub Copilot uninstall/disable completed.");
+  console.log(`Backup directory: ${backupRoot}`);
+  console.log(`Mode: ${args.disableOnly ? "disable-only" : "uninstall"}`);
+  console.log(`Raw Copilot config reset: ${args.resetRawConfig ? "yes" : "no"}`);
+  console.log(`Raw Copilot runtime state cleared: ${args.clearRawState ? "yes" : "no"}`);
+  console.log("");
+  console.log("Post-remove verification:");
+  console.log("  1. Open a new terminal, or run: exec zsh");
+  console.log("  2. Run: type copilot");
+  console.log("  3. Run: echo \"$XGC_COPILOT_PROFILE_HOME\"");
+  console.log("  4. Run: copilot plugin list");
+}
+
+try {
+  main();
+} catch (error) {
+  console.error(error instanceof Error ? error.message : String(error));
+  console.error(usage());
+  process.exit(1);
+}

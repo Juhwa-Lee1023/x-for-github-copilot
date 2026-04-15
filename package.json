@@ -1,13 +1,46 @@
 {
-  "name": "xgc",
+  "name": "x-for-github-copilot",
   "version": "0.1.0",
-  "private": true,
+  "private": false,
   "license": "MIT",
   "description": "X for GitHub Copilot: planning-first integration orchestration and runtime truth for GitHub Copilot CLI workflows.",
   "type": "module",
+  "bin": {
+    "xgc": "./bin/xgc.mjs",
+    "x-for-github-copilot": "./bin/xgc.mjs"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "README.md",
+    "LICENSE",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
+    "UPSTREAM.md",
+    "PORTING_NOTES.md",
+    "MIGRATION_NOTES.md",
+    "KNOWN_RISKS.md",
+    "bin",
+    "docs",
+    "source",
+    "agents",
+    "skills",
+    "hooks",
+    "plugin.json",
+    ".github/agents",
+    ".github/skills",
+    ".github/hooks",
+    ".github/mcp.json",
+    "lsp.json",
+    "runtime-dist",
+    "scripts"
+  ],
   "scripts": {
     "generate:surfaces": "tsx scripts/generate-runtime-surfaces.ts",
     "generate:surfaces:check": "tsx scripts/generate-runtime-surfaces.ts --check",
+    "generate:runtime-dist": "node scripts/generate-runtime-dist.mjs",
+    "generate:runtime-dist:check": "node scripts/generate-runtime-dist.mjs --check",
     "materialize:global": "tsx scripts/materialize-global-xgc.ts",
     "report:surfaces": "tsx scripts/report-runtime-surfaces.ts",
     "report:session-bundle": "tsx scripts/report-session-bundle.ts",
@@ -18,7 +51,7 @@
     "validate:config": "tsx scripts/validate-plugin.ts",
     "validate:global": "tsx scripts/validate-global-xgc.ts",
     "repair:raw-hooks": "tsx scripts/repair-raw-copilot-hooks.ts",
-    "validate": "npm run generate:surfaces:check && npm run validate:config && npm run typecheck && npm run smoke:fresh-bootstrap && npm test",
+    "validate": "npm run generate:surfaces:check && npm run generate:runtime-dist:check && npm run validate:config && npm run typecheck && npm run smoke:fresh-bootstrap && npm test",
     "validate:runtime": "tsx scripts/smoke-copilot-cli.ts",
     "smoke:structural": "bash scripts/smoke-test.sh",
     "smoke:fresh-bootstrap": "tsx scripts/fresh-bootstrap-smoke.ts",
@@ -37,6 +70,7 @@
   },
   "devDependencies": {
     "@types/node": "^24.6.0",
+    "esbuild": "^0.25.11",
     "tsx": "^4.20.5",
     "typescript": "^5.9.3"
   }
