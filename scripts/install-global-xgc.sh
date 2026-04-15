@@ -255,6 +255,13 @@ xgc_valid_reasoning_effort() {
   esac
 }
 
+xgc_valid_reasoning_effort_cap() {
+  case "${1:-}" in
+    low|medium|high|xhigh) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 xgc_prompt_permission_mode() {
   local default_mode="${1:-work}"
   local answer=""
@@ -282,6 +289,7 @@ install_global_xgc_main() {
   local packaged_runtime=0
   local permission_mode="${XGC_PERMISSION_MODE:-}"
   local reasoning_effort="${XGC_REASONING_EFFORT:-xhigh}"
+  local reasoning_effort_cap="${XGC_REASONING_EFFORT_CAP:-high}"
   local release_repo="${GITHUB_REPOSITORY:-Juhwa-Lee1023/x-for-github-copilot}"
   local release_tag=""
   local update_track=""
@@ -359,6 +367,22 @@ install_global_xgc_main() {
         fi
         shift
         ;;
+      --reasoning-effort-cap|--effort-cap)
+        if [[ -z "${2:-}" ]] || ! xgc_valid_reasoning_effort_cap "$2"; then
+          echo "--reasoning-effort-cap requires one of: low, medium, high, xhigh" >&2
+          exit 2
+        fi
+        reasoning_effort_cap="$2"
+        shift 2
+        ;;
+      --reasoning-effort-cap=*|--effort-cap=*)
+        reasoning_effort_cap="${1#*=}"
+        if ! xgc_valid_reasoning_effort_cap "$reasoning_effort_cap"; then
+          echo "--reasoning-effort-cap requires one of: low, medium, high, xhigh" >&2
+          exit 2
+        fi
+        shift
+        ;;
       *)
         bootstrap_args+=("$1")
         shift
@@ -422,6 +446,7 @@ install_global_xgc_main() {
     --raw-copilot-bin "$raw_copilot_bin"
     --permission-mode "$permission_mode"
     --reasoning-effort "$reasoning_effort"
+    --reasoning-effort-cap "$reasoning_effort_cap"
     --install-source "$install_source"
     --release-repo "$release_repo"
     --update-channel "$update_channel"
@@ -471,6 +496,7 @@ install_global_xgc_main() {
   echo "Raw Copilot binary: $raw_copilot_bin"
   echo "Permission mode: $permission_mode"
   echo "Reasoning effort: $reasoning_effort"
+  echo "Reasoning effort cap: $reasoning_effort_cap"
   echo
   echo "Start using it:"
   echo "  1. Open a new terminal, or run: exec zsh"
@@ -481,6 +507,7 @@ install_global_xgc_main() {
   echo "  copilot      - X for GitHub Copilot front door"
   echo "  copilot_raw  - raw GitHub Copilot CLI without the XGC shim"
   echo "  xgc_mode ask|work|yolo - change the current shell permission mode"
+  echo "  XGC_REASONING_EFFORT_CAP=xhigh copilot - allow xhigh on accounts that support it"
   echo "  XGC_REASONING_EFFORT=off copilot - run without the default reasoning-effort injection"
   echo
   echo "Later, if you want raw Copilot again:"

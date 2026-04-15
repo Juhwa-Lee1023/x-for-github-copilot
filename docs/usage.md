@@ -64,8 +64,12 @@ xgc uninstall --reset-raw-config --clear-raw-state
   X for GitHub Copilot profile + `required-check`
 - `xgc_mode`
   switches the current shell between `ask`, `work`, and `yolo` Copilot permission modes
+- `xgc_effort_cap`
+  switches the current shell's maximum injected reasoning effort between `low`, `medium`, `high`, and `xhigh`
 - `XGC_REASONING_EFFORT`
-  controls the default Copilot CLI reasoning effort injected by the XGC shim; default is `xhigh`, and `off` disables injection for the current shell
+  controls the desired Copilot CLI reasoning effort injected by the XGC shim; default requests `xhigh`, while `off` disables injection for the current shell
+- `XGC_REASONING_EFFORT_CAP`
+  caps the injected reasoning effort for account/subscription safety; default is `high`, and only confirmed xhigh-capable accounts should set it to `xhigh`
 - `xgc doctor`
   validates the installed runtime/profile state
 - `xgc update`
@@ -239,12 +243,14 @@ echo "$XGC_COPILOT_PROFILE_HOME"
 If needed, repair and re-activate:
 
 ```bash
-npx x-for-github-copilot doctor
+npx --yes x-for-github-copilot doctor
 npm run repair:raw-hooks -- --dry-run
 npm run repair:raw-hooks
-npx x-for-github-copilot install
+npx --yes x-for-github-copilot install --permission-mode <mode> --reasoning-effort xhigh --reasoning-effort-cap high
 source ~/.config/xgc/xgc-shell.sh
 ```
+
+Replace `<mode>` with `ask`, `work`, or `yolo`. For a manual interactive repair, `npx x-for-github-copilot install` is still fine; the `npx --yes ... --permission-mode ...` form is for agent/scripted repair.
 
 Interpretation guidance:
 

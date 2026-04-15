@@ -43,6 +43,9 @@ test("repo master is an orchestration-first front door", () => {
   assert.match(content, /do not make Triage mandatory/i);
   assert.match(content, /Triage skipped: fresh empty scaffold with concrete execution packet/i);
   assert.match(content, /do not keep the TUI in a silent wait/i);
+  assert.match(content, /avoid opening an independent parallel \*\*Repo Scout\*\*/i);
+  assert.match(content, /Front-door grounding packet:/i);
+  assert.match(content, /A Scout already launched by Repo Master counts as used/i);
   assert.match(content, /Patch Master pass returns no implementation/i);
   assert.match(content, /root-level scaffold commands/i);
   assert.match(content, /pre-existing `\.xgc\/` directory as product code/i);
@@ -93,6 +96,8 @@ test("milestone is planner-only and grounds before asking", () => {
   assert.match(content, /launch a small, bounded \*\*Repo Scout\*\* wave/i);
   assert.match(content, /widen only when cold-start ambiguity remains/i);
   assert.match(content, /front-door grounding packet may already exist/i);
+  assert.match(content, /caller-launched \*\*Repo Scout\*\* as already used/i);
+  assert.match(content, /front-door grounding unavailable/i);
   assert.match(content, /use \*\*Ref Index\*\* when docs, config, specs, or setup context are heavy/i);
   assert.match(content, /use \*\*Visual Forge\*\*, \*\*Writing Desk\*\*, \*\*Multimodal Look\*\*, or \*\*Artistry Studio\*\*/i);
   assert.match(content, /always include `specialistFanoutPlan:`/i);
@@ -294,6 +299,7 @@ test("runtime smoke keeps planning integrity and neutral route evidence", () => 
   assert.match(script, /observedPlanningChain/);
   assert.match(script, /routeSummarySource/);
   assert.match(script, /observedScoutCount/);
+  assert.match(script, /repoScoutDuplicateObserved/);
   assert.match(script, /triageInvocationCount/);
   assert.match(script, /triageDuplicateObserved/);
   assert.match(script, /executionReadyHandoffSeenBeforeSecondTriage/);

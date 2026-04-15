@@ -5,8 +5,10 @@ import {
   materializeGlobalProfile,
   isXgcPermissionMode,
   isXgcReasoningEffort,
+  isXgcReasoningEffortCap,
   normalizeXgcPermissionMode,
   normalizeXgcReasoningEffort,
+  normalizeXgcReasoningEffortCap,
   resolveRawCopilotBin,
   resolveGlobalPaths,
   writeGlobalInstallState,
@@ -24,6 +26,7 @@ function parseArgs(argv: string[]) {
     rawCopilotBinFromCli: false,
     permissionMode: normalizeXgcPermissionMode(process.env.XGC_PERMISSION_MODE),
     reasoningEffort: normalizeXgcReasoningEffort(process.env.XGC_REASONING_EFFORT),
+    reasoningEffortCap: normalizeXgcReasoningEffortCap(process.env.XGC_REASONING_EFFORT_CAP),
     installSource: "repo-checkout" as XgcInstallSource,
     releaseRepo: process.env.GITHUB_REPOSITORY || "Juhwa-Lee1023/x-for-github-copilot",
     releaseTag: null as string | null,
@@ -58,6 +61,19 @@ function parseArgs(argv: string[]) {
       }
       args.reasoningEffort = effort;
       index += 1;
+    } else if ((current === "--reasoning-effort-cap" || current === "--effort-cap") && argv[index + 1]) {
+      const cap = argv[index + 1];
+      if (!isXgcReasoningEffortCap(cap)) {
+        throw new Error(`Invalid --reasoning-effort-cap: ${cap}. Expected low, medium, high, or xhigh.`);
+      }
+      args.reasoningEffortCap = cap;
+      index += 1;
+    } else if (current.startsWith("--reasoning-effort-cap=") || current.startsWith("--effort-cap=")) {
+      const cap = current.split("=", 2)[1] ?? "";
+      if (!isXgcReasoningEffortCap(cap)) {
+        throw new Error(`Invalid --reasoning-effort-cap: ${cap}. Expected low, medium, high, or xhigh.`);
+      }
+      args.reasoningEffortCap = cap;
     } else if (current === "--install-source" && argv[index + 1]) {
       const source = argv[index + 1];
       if (source !== "repo-checkout" && source !== "release-artifact" && source !== "npm-package") {
@@ -100,6 +116,8 @@ try {
   const result = await materializeGlobalProfile({
     repoRoot: args.repoRoot,
     homeDir: args.homeDir,
+    reasoningEffort: args.reasoningEffort,
+    reasoningEffortCap: args.reasoningEffortCap,
     requireRuntimeDist: args.installSource !== "repo-checkout"
   });
   writeGlobalShellEnv({
@@ -109,6 +127,7 @@ try {
     repoRoot: args.repoRoot,
     permissionMode: args.permissionMode,
     reasoningEffort: args.reasoningEffort,
+    reasoningEffortCap: args.reasoningEffortCap,
     autoUpdateMode: args.autoUpdateMode
   });
   writeGlobalInstallState({
@@ -117,6 +136,7 @@ try {
     rawCopilotBin,
     permissionMode: args.permissionMode,
     reasoningEffort: args.reasoningEffort,
+    reasoningEffortCap: args.reasoningEffortCap,
     installSource: args.installSource,
     releaseRepo: args.releaseRepo,
     releaseTag: args.releaseTag,
@@ -132,6 +152,7 @@ try {
   console.log(`raw copilot binary: ${rawCopilotBin ?? "not found; shim will resolve from PATH at shell load time"}`);
   console.log(`permission mode: ${args.permissionMode}`);
   console.log(`reasoning effort: ${args.reasoningEffort}`);
+  console.log(`reasoning effort cap: ${args.reasoningEffortCap}`);
   console.log(`auto update mode: ${args.autoUpdateMode}`);
   console.log(`copied agents: ${result.copiedAgents.length}`);
   console.log(`copied skills: ${result.copiedSkills.length}`);

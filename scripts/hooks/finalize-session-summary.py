@@ -80,6 +80,7 @@ FIELD_ORDER = [
     "route_agents",
     "key_agents",
     "repo_scout_invocation_count",
+    "repo_scout_duplicate_observed",
     "triage_invocation_count",
     "patch_master_invocation_count",
     "required_check_invocation_count",
@@ -1139,8 +1140,67 @@ def collect_event_evidence_text(events, include_prompt_text=True):
     return "\n".join(chunks)
 
 
+BARE_TOOL_EXIT_RE = re.compile(r"^\s*<exited with exit code (-?\d+)>\s*$", re.IGNORECASE)
+
+
+def is_search_command(command):
+    if not isinstance(command, str) or not command.strip():
+        return False
+    normalized = command.strip()
+    return bool(
+        re.search(r"(^|[;&|()\s])(?:rg|grep)\b", normalized)
+        or re.search(r"\bgit\s+(?:--no-pager\s+)?grep\b", normalized)
+    )
+
+
+def is_expected_no_match_validation_command(command, description):
+    if not is_search_command(command):
+        return False
+    context = " ".join(part for part in [description, command] if isinstance(part, str)).lower()
+    if not context:
+        return False
+    return bool(
+        re.search(r"\b(check|verify|ensure|assert|confirm|removed|remaining|hardcoded|leftover|no-match|no match)\b", context)
+        and not re.search(r"\b(search|find|list|discover|ground|scout|inspect)\b", context)
+    )
+
+
+def is_validation_command(command, description):
+    context = " ".join(part for part in [description, command] if isinstance(part, str)).lower()
+    if not context:
+        return False
+    return bool(
+        re.search(
+            r"\b(node\s+--check|git\s+(?:--no-pager\s+)?diff\s+--check|npm\s+(?:run\s+)?(?:test|build|lint|typecheck)|pnpm\s+(?:test|build|lint|typecheck)|yarn\s+(?:test|build|lint|typecheck)|bun\s+(?:test|build)|npx\s+(?:playwright|vitest|tsc|prisma)|vitest|playwright|tsc|eslint|typecheck|validation)\b",
+            context,
+        )
+    )
+
+
+def concise_command_label(command, description):
+    if isinstance(description, str) and description.strip():
+        return description.strip()[:180]
+    if isinstance(command, str) and command.strip():
+        return re.sub(r"\s+", " ", command.strip())[:180]
+    return "unknown command"
+
+
+def bare_tool_exit_code(values):
+    if not isinstance(values, list) or not values:
+        return None
+    normalized_values = [value.strip() for value in values if isinstance(value, str) and value.strip()]
+    if not normalized_values:
+        return None
+    first = normalized_values[0]
+    if any(value != first for value in normalized_values):
+        return None
+    match = BARE_TOOL_EXIT_RE.match(first)
+    return int(match.group(1)) if match else None
+
+
 def collect_validation_evidence_text(events, process_log_text=""):
     chunks = []
+    tool_context_by_id = {}
 
     def visit(value):
         if isinstance(value, str):
@@ -1154,9 +1214,10 @@ def collect_validation_evidence_text(events, process_log_text=""):
             for nested_value in value:
                 visit(nested_value)
 
-    def collect_string_paths(value, paths):
+    def extract_string_paths(value, paths):
+        values = []
         if not isinstance(value, dict):
-            return
+            return values
         for path_parts in paths:
             current = value
             for part in path_parts:
@@ -1165,7 +1226,31 @@ def collect_validation_evidence_text(events, process_log_text=""):
                     break
                 current = current.get(part)
             if isinstance(current, str) and current.strip():
-                chunks.append(current)
+                values.append(current)
+        return values
+
+    for entry in events:
+        if not isinstance(entry, dict) or entry.get("type") != "tool.execution_start":
+            continue
+        data = entry.get("data")
+        if not isinstance(data, dict):
+            continue
+        tool_call_id = data.get("toolCallId")
+        if not isinstance(tool_call_id, str) or not tool_call_id:
+            continue
+        arguments = data.get("arguments")
+        command = None
+        description = None
+        if isinstance(arguments, dict):
+            command = arguments.get("command")
+            description = arguments.get("description")
+        elif isinstance(arguments, str):
+            command = arguments
+        tool_context_by_id[tool_call_id] = {
+            "toolName": data.get("toolName"),
+            "command": command if isinstance(command, str) else None,
+            "description": description if isinstance(description, str) else None,
+        }
 
     for entry in events:
         if not isinstance(entry, dict):
@@ -1175,13 +1260,13 @@ def collect_validation_evidence_text(events, process_log_text=""):
         if not isinstance(data, dict):
             continue
         if entry_type == "assistant.message":
-            collect_string_paths(data, [["content"], ["text"], ["message"], ["summary"]])
+            chunks.extend(extract_string_paths(data, [["content"], ["text"], ["message"], ["summary"]]))
             continue
         if entry_type == "hook.end":
             visit(data)
             continue
         if entry_type == "tool.execution_complete":
-            collect_string_paths(
+            values = extract_string_paths(
                 data,
                 [
                     ["content"],
@@ -1199,6 +1284,24 @@ def collect_validation_evidence_text(events, process_log_text=""):
                     ["result", "detailedContent"],
                 ],
             )
+            exit_code = bare_tool_exit_code(values)
+            if exit_code is not None:
+                context = tool_context_by_id.get(data.get("toolCallId"), {})
+                command = context.get("command") if isinstance(context, dict) else None
+                description = context.get("description") if isinstance(context, dict) else None
+                label = concise_command_label(command, description)
+                if exit_code == 1 and is_expected_no_match_validation_command(command, description):
+                    chunks.append(f"validation no-match check passed: {label}")
+                    continue
+                if exit_code != 0 and is_search_command(command):
+                    continue
+                if is_validation_command(command, description):
+                    if exit_code == 0:
+                        chunks.append(f"validation command passed: {label}")
+                    else:
+                        chunks.append(f"validation command failed: {label} exited with exit code {exit_code}")
+                    continue
+            chunks.extend(values)
     if process_log_text:
         chunks.append(process_log_text)
     return "\n".join(chunk for chunk in chunks if chunk)
@@ -2172,6 +2275,8 @@ def summarize_route(events, evidence_text="", scope_text=""):
     )
     runtime_tooling_issues = summarize_runtime_tooling_issues(evidence_text)
     triage_invocations = [entry for entry in invocations if entry["agent_name"] == "Triage"]
+    repo_scout_invocation_count = invocation_counts.get("Repo Scout", 0)
+    repo_scout_duplicate_observed = repo_scout_invocation_count > 1
     triage_duplicate_observed = len(triage_invocations) > 1
     execution_ready_handoff_seen_before_second_triage = False
     triage_duplicate_allowed_reason = None
@@ -2219,7 +2324,8 @@ def summarize_route(events, evidence_text="", scope_text=""):
         "key_agents": key_agents,
         "route_summary": route_summary,
         **direct_tool_summary,
-        "repo_scout_invocation_count": invocation_counts.get("Repo Scout", 0),
+        "repo_scout_invocation_count": repo_scout_invocation_count,
+        "repo_scout_duplicate_observed": repo_scout_duplicate_observed,
         "triage_invocation_count": invocation_counts.get("Triage", 0),
         "patch_master_invocation_count": invocation_counts.get("Patch Master", 0),
         "required_check_invocation_count": invocation_counts.get("Required Check", 0),
@@ -2708,7 +2814,7 @@ def validation_failure_patterns():
 
 def validation_pass_patterns(strong=False):
     strong_patterns = [
-        re.compile(r"\b(no eslint warnings or errors|npm test passed|tests?\s+\d+\s+passed|test files?\s+\d+\s+passed|compiled successfully|build passed|validation passed|smoke test passed|playwright.*\bpassed|all required validation commands passed)\b", re.IGNORECASE),
+        re.compile(r"\b(no eslint warnings or errors|npm test passed|tests?\s+\d+\s+passed|test files?\s+\d+\s+passed|compiled successfully|build passed|validation passed|validation command passed|validation no-match check passed|smoke test passed|playwright.*\bpassed|all required validation commands passed)\b", re.IGNORECASE),
         re.compile(r"^\s*(?:✓\s*)?\d+\s+passed\b", re.IGNORECASE),
         re.compile(r"^\s*(?:\d+[\.)]\s*)?`?(?:npm install|npx prisma generate|npx prisma db push --force-reset|npm run seed|npm run lint|npm test|npm run build|npx playwright test)`?\s*(?:✅|passed)\s*$", re.IGNORECASE),
         re.compile(r"^\s*all passed\.?\s*$", re.IGNORECASE),
@@ -2734,7 +2840,7 @@ def validation_signal_lines(text, patterns):
 
 
 def validation_signal_noise_line(line):
-    if validation_checkmark_result_line(line):
+    if validation_checkmark_result_line(line) or validation_structured_result_line(line):
         return False
     return bool(
         is_prompt_or_requirement_line(line)
@@ -2768,6 +2874,10 @@ def validation_checkmark_result_line(line):
             re.IGNORECASE,
         )
     )
+
+
+def validation_structured_result_line(line):
+    return bool(re.search(r"^\s*validation\s+(?:command|no-match check)\s+(?:passed|failed)\b", line, re.IGNORECASE))
 
 
 def validation_retrospective_failure_note_line(line):

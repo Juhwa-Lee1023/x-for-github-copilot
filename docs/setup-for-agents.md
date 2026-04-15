@@ -6,7 +6,7 @@ If you are installing X for GitHub Copilot for a user, do not start with this re
 curl -fsSL https://raw.githubusercontent.com/Juhwa-Lee1023/x-for-github-copilot/refs/heads/main/docs/install.md
 ```
 
-Ask the user for `ask`, `work`, or `yolo`, then use `npx x-for-github-copilot install --permission-mode <mode>` and verify with a fresh shell.
+Ask the user for `ask`, `work`, or `yolo`, then use `npx --yes x-for-github-copilot install --permission-mode <mode> --reasoning-effort xhigh --reasoning-effort-cap high` and verify with `npx --yes x-for-github-copilot doctor` plus a fresh shell. Keep `--yes` before the package name; it answers npm/npx package-install confirmation and does not choose the XGC permission mode. Keep the safe `high` cap unless the user explicitly says their Copilot account supports `xhigh`.
 
 If you are a coding agent bootstrapping this repository checkout for development, use this exact sequence:
 

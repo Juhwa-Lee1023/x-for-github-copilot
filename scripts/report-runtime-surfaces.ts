@@ -222,6 +222,7 @@ function buildLatestSessionTruth(profileHome: string, opts: { repoRoot: string; 
     validationArtifactFileCount: asArrayLength(summary.validation_artifact_files),
     keyAgents: asStringArray(summary.key_agents),
     repoScoutInvocationCount: asNullableNumber(summary.repo_scout_invocation_count),
+    repoScoutDuplicateObserved: asNullableBoolean(summary.repo_scout_duplicate_observed),
     triageInvocationCount: asNullableNumber(summary.triage_invocation_count),
     patchMasterInvocationCount: asNullableNumber(summary.patch_master_invocation_count),
     requiredCheckInvocationCount: asNullableNumber(summary.required_check_invocation_count),

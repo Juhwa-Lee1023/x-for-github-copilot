@@ -17,6 +17,8 @@ Orchestration front door and router. It should keep the public entry UX stable, 
 
 Repo Master should reuse completed planning reviews. If Milestone already ran Triage and returned a handoff with those findings incorporated, Repo Master should not call Triage again unless new facts materially change scope, risk, or acceptance criteria. After Patch Master starts, Repo Master should not reopen built-in generic agents such as `Explore Agent` or `General Purpose Agent` by default; after Patch Master completes, Repo Master should use the execution summary, run at most one narrow verification batch if required evidence is missing, and then close the user turn. For integration-class work, Repo Master should not close with a `/tasks`-only background pointer or a completion notice alone; it should retrieve and consume the blocking background result or report incomplete execution.
 
+When Repo Master routes a request into Milestone, it should not also open a parallel Repo Scout for the same scope. If Repo Master already ran Scout, it should pass a compact `Front-door grounding packet:` and let Milestone reuse it.
+
 ### Repo Scout
 
 Runtime id: `repo-scout`
@@ -38,6 +40,7 @@ Runtime id: `milestone`
 Planner-only gate for non-trivial work. Milestone should produce an execution-ready plan, not implement the task.
 After Triage returns, Milestone should close the planning loop by producing either an execution-ready Patch Master handoff or an explicit blocked-before-execution result. It should not reopen generic `explore`, raw multi-file dumps, or broad rediscovery after Triage.
 For integration-class tasks, Milestone should name shared/integration-owned surfaces, include `Shared-surface owner:` when needed, record `Foundation readiness:`, set `Execution owner: Patch Master`, and include blocker/recovery rules when readiness is unknown before handing off execution.
+If Repo Master supplied or launched Scout grounding, Milestone should consume that packet before opening another Scout; a duplicate Scout in the same effective plan cycle should require an explicit multi-scout wave or named blocker.
 
 ### Triage
 
@@ -112,6 +115,8 @@ Creative lane for naming, tone, messaging, copy concepts, creative concepts, and
 The intended runtime shape is:
 
 **Repo Master -> Repo Scout / Ref Index when useful -> Milestone when planning is needed -> Triage for non-trivial or risky plans -> Patch Master -> optional Required Check**
+
+That shape should be interpreted as coordinated ownership, not a license for Repo Master and Milestone to independently scout the same scope in parallel.
 
 Specialist lanes can be used before, during, or after planning when their expertise improves the handoff, but they do not replace Milestone's planning ownership or Patch Master's execution ownership.
 

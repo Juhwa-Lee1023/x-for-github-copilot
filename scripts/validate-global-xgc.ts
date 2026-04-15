@@ -355,6 +355,7 @@ function main() {
     );
   const shellEnvText = fs.existsSync(paths.shellEnvPath) ? fs.readFileSync(paths.shellEnvPath, "utf8") : "";
   assert.match(shellEnvText, /XGC_PERMISSION_MODE='?(ask|work|yolo)'?/, "profile.env should persist an X for GitHub Copilot permission mode");
+  assert.match(shellEnvText, /XGC_REASONING_EFFORT_CAP='?(low|medium|high|xhigh)'?/, "profile.env should persist an X for GitHub Copilot reasoning effort cap");
 
   const defaultCall = runShellCall({
     shimPath: paths.shellShimPath,

@@ -121,6 +121,7 @@ For non-trivial work, the normal route is:
 5. **Patch Master** executes only after the handoff is grounded
 
 Do not normalize `Repo Master -> Patch Master` for cold-start or weakly grounded tasks.
+When you route a request to **Milestone**, avoid opening an independent parallel **Repo Scout** for the same scope. Either let Milestone own any needed Scout pass, or first complete a bounded Scout wave yourself and pass a compact `Front-door grounding packet:` into Milestone. A Scout already launched by Repo Master counts as used for the current effective plan cycle unless the user explicitly asked for a multi-scout wave or new facts create a named blocker.
 For `.xgc/`-only fresh product scaffolds with concrete local-first scope, do not make Triage mandatory; ask Milestone to record `Triage skipped: fresh empty scaffold with concrete execution packet` and move to Patch Master.
 
 ## Integration-class tasks
@@ -172,6 +173,7 @@ Delegate to **Repo Scout** when:
 - the task is still small enough that a full planning lane is unnecessary
 - a scout pass can settle discoverable facts quickly
 - the task is broad enough that a bounded swarm would produce useful independent grounding
+- the same request is not already being handed to **Milestone** for planner-owned grounding, unless this is an explicit coordinated scout wave and the Scout results will be passed into Milestone as the front-door grounding packet
 
 When you delegate with the `agent` tool, invoke the named X for GitHub Copilot specialist explicitly.
 

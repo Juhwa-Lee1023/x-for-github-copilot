@@ -36,6 +36,7 @@ export type GlobalPaths = {
 export type CopilotConfig = Record<string, unknown> & {
   installed_plugins?: unknown[];
   model?: string;
+  effortLevel?: string;
   trusted_folders?: string[];
   custom_agents?: Record<string, unknown> & {
     default_local_only?: boolean;
@@ -60,11 +61,22 @@ export type MaterializeGlobalProfileOptions = {
   repoRoot: string;
   rawConfigPath?: string;
   requireRuntimeDist?: boolean;
+  reasoningEffort?: XgcReasoningEffort;
+  reasoningEffortCap?: XgcReasoningEffortCap;
 };
 
 export type XgcPermissionMode = "ask" | "work" | "yolo";
 export type XgcReasoningEffort = "low" | "medium" | "high" | "xhigh" | "off";
+export type XgcReasoningEffortCap = Exclude<XgcReasoningEffort, "off">;
 export type XgcInstallSource = "repo-checkout" | "release-artifact" | "npm-package";
+type CopilotReasoningEffort = XgcReasoningEffortCap;
+
+const reasoningEffortRank: Record<CopilotReasoningEffort, number> = {
+  low: 0,
+  medium: 1,
+  high: 2,
+  xhigh: 3
+};
 
 export function isXgcPermissionMode(value: string): value is XgcPermissionMode {
   return value === "ask" || value === "work" || value === "yolo";
@@ -78,8 +90,39 @@ export function isXgcReasoningEffort(value: string): value is XgcReasoningEffort
   return value === "low" || value === "medium" || value === "high" || value === "xhigh" || value === "off";
 }
 
+export function isXgcReasoningEffortCap(value: string): value is XgcReasoningEffortCap {
+  return value === "low" || value === "medium" || value === "high" || value === "xhigh";
+}
+
 export function normalizeXgcReasoningEffort(value: string | undefined | null): XgcReasoningEffort {
   return value && isXgcReasoningEffort(value) ? value : "xhigh";
+}
+
+export function normalizeXgcReasoningEffortCap(value: string | undefined | null): XgcReasoningEffortCap {
+  return value && isXgcReasoningEffortCap(value) ? value : "high";
+}
+
+export function modelSupportsXhighReasoning(model: string | undefined | null) {
+  const normalized = typeof model === "string" ? model.trim().toLowerCase() : "";
+  return normalized === "gpt-5" || normalized.startsWith("gpt-5.") || normalized.startsWith("gpt-5-") || normalized.startsWith("openai/gpt-5");
+}
+
+function lowerReasoningEffort(left: CopilotReasoningEffort, right: CopilotReasoningEffort): CopilotReasoningEffort {
+  return reasoningEffortRank[left] <= reasoningEffortRank[right] ? left : right;
+}
+
+export function effectiveCopilotReasoningEffort(
+  desiredEffort: string | undefined | null,
+  model: string | undefined | null,
+  reasoningEffortCap?: string | undefined | null
+): CopilotReasoningEffort | null {
+  const normalized = normalizeXgcReasoningEffort(desiredEffort);
+  if (normalized === "off") {
+    return null;
+  }
+  const accountCap = normalizeXgcReasoningEffortCap(reasoningEffortCap);
+  const modelCap = model && !modelSupportsXhighReasoning(model) ? "high" : "xhigh";
+  return lowerReasoningEffort(lowerReasoningEffort(normalized, accountCap), modelCap);
 }
 
 export type MaterializeGlobalProfileResult = {
@@ -432,6 +475,13 @@ export async function materializeGlobalProfile(
     paths
   });
   const rootModel = normalizeRootModel(profileConfig.model);
+  const effectiveEffort = effectiveCopilotReasoningEffort(options.reasoningEffort, rootModel, options.reasoningEffortCap);
+  const runtimeProfileConfig = effectiveEffort
+    ? {
+        ...profileConfig,
+        effortLevel: effectiveEffort
+      }
+    : profileConfig;
 
   await writeRuntimeAgentMirror(path.join(repoRoot, "source", "agents"), paths.profileAgentsDir, { rootModel });
   copyCleanDir(path.join(repoRoot, "skills"), paths.profileSkillsDir);
@@ -443,7 +493,7 @@ export async function materializeGlobalProfile(
   fs.copyFileSync(path.join(repoRoot, ".github", "mcp.json"), paths.profileMcpConfigPath);
   fs.copyFileSync(path.join(repoRoot, "lsp.json"), paths.profileLspConfigPath);
 
-  fs.writeFileSync(paths.profileConfigPath, `${JSON.stringify(profileConfig, null, 2)}\n`);
+  fs.writeFileSync(paths.profileConfigPath, `${JSON.stringify(runtimeProfileConfig, null, 2)}\n`);
 
   return {
     paths,
@@ -462,6 +512,7 @@ export function writeGlobalInstallState(opts: {
   rawCopilotBin: string | null;
   permissionMode?: XgcPermissionMode;
   reasoningEffort?: XgcReasoningEffort;
+  reasoningEffortCap?: XgcReasoningEffortCap;
   installSource?: XgcInstallSource;
   releaseRepo?: string;
   releaseTag?: string | null;
@@ -493,6 +544,7 @@ export function writeGlobalInstallState(opts: {
     rawCopilotBin: opts.rawCopilotBin,
     permissionMode: opts.permissionMode ?? "ask",
     reasoningEffort: normalizeXgcReasoningEffort(opts.reasoningEffort),
+    reasoningEffortCap: normalizeXgcReasoningEffortCap(opts.reasoningEffortCap),
     updateChannel: opts.updateChannel ?? "stable",
     updateTrack,
     updatePolicy,
@@ -515,6 +567,7 @@ export function writeGlobalShellEnv(opts: {
   repoRoot?: string;
   permissionMode?: XgcPermissionMode;
   reasoningEffort?: XgcReasoningEffort;
+  reasoningEffortCap?: XgcReasoningEffortCap;
   autoUpdateMode?: XgcAutoUpdateMode;
 }) {
   const rawCopilotBin =
@@ -532,6 +585,7 @@ export function writeGlobalShellEnv(opts: {
     `export XGC_HOOK_SCRIPT_ROOT=${shellQuote(opts.paths.profileHookScriptsDir)}`,
     `export XGC_PERMISSION_MODE=${shellQuote(opts.permissionMode ?? "ask")}`,
     `export XGC_REASONING_EFFORT=${shellQuote(normalizeXgcReasoningEffort(opts.reasoningEffort))}`,
+    `export XGC_REASONING_EFFORT_CAP=${shellQuote(normalizeXgcReasoningEffortCap(opts.reasoningEffortCap))}`,
     `export XGC_AUTO_UPDATE_MODE=${shellQuote(normalizeAutoUpdateMode(opts.autoUpdateMode))}`
   ];
 

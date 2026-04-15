@@ -636,6 +636,7 @@ function renderRuntimeSourceReportMarkdown(report) {
     lines.push(`- Validation artifact files: ${truth.validationArtifactFileCount}`);
     lines.push(`- Key agents: ${truth.keyAgents.length > 0 ? truth.keyAgents.join(", ") : "none"}`);
     lines.push(`- Repo Scout invocation count: ${truth.repoScoutInvocationCount ?? "unknown"}`);
+    lines.push(`- Repo Scout duplicate observed: ${renderNullableBoolean(truth.repoScoutDuplicateObserved)}`);
     lines.push(`- Triage invocation count: ${truth.triageInvocationCount ?? "unknown"}`);
     lines.push(`- Patch Master invocation count: ${truth.patchMasterInvocationCount ?? "unknown"}`);
     lines.push(`- Required Check invocation count: ${truth.requiredCheckInvocationCount ?? "unknown"}`);
@@ -1195,6 +1196,7 @@ ${copilotResult.stderr}`);
   );
   const shellEnvText = fs4.existsSync(paths.shellEnvPath) ? fs4.readFileSync(paths.shellEnvPath, "utf8") : "";
   assert.match(shellEnvText, /XGC_PERMISSION_MODE='?(ask|work|yolo)'?/, "profile.env should persist an X for GitHub Copilot permission mode");
+  assert.match(shellEnvText, /XGC_REASONING_EFFORT_CAP='?(low|medium|high|xhigh)'?/, "profile.env should persist an X for GitHub Copilot reasoning effort cap");
   const defaultCall = runShellCall({
     shimPath: paths.shellShimPath,
     rawBin: fakeRaw,

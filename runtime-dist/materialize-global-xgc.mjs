@@ -363,6 +363,12 @@ function normalizeAutoUpdateMode(value) {
 }
 
 // scripts/lib/global-xgc.ts
+var reasoningEffortRank = {
+  low: 0,
+  medium: 1,
+  high: 2,
+  xhigh: 3
+};
 function isXgcPermissionMode(value) {
   return value === "ask" || value === "work" || value === "yolo";
 }
@@ -372,8 +378,30 @@ function normalizeXgcPermissionMode(value) {
 function isXgcReasoningEffort(value) {
   return value === "low" || value === "medium" || value === "high" || value === "xhigh" || value === "off";
 }
+function isXgcReasoningEffortCap(value) {
+  return value === "low" || value === "medium" || value === "high" || value === "xhigh";
+}
 function normalizeXgcReasoningEffort(value) {
   return value && isXgcReasoningEffort(value) ? value : "xhigh";
+}
+function normalizeXgcReasoningEffortCap(value) {
+  return value && isXgcReasoningEffortCap(value) ? value : "high";
+}
+function modelSupportsXhighReasoning(model) {
+  const normalized = typeof model === "string" ? model.trim().toLowerCase() : "";
+  return normalized === "gpt-5" || normalized.startsWith("gpt-5.") || normalized.startsWith("gpt-5-") || normalized.startsWith("openai/gpt-5");
+}
+function lowerReasoningEffort(left, right) {
+  return reasoningEffortRank[left] <= reasoningEffortRank[right] ? left : right;
+}
+function effectiveCopilotReasoningEffort(desiredEffort, model, reasoningEffortCap) {
+  const normalized = normalizeXgcReasoningEffort(desiredEffort);
+  if (normalized === "off") {
+    return null;
+  }
+  const accountCap = normalizeXgcReasoningEffortCap(reasoningEffortCap);
+  const modelCap = model && !modelSupportsXhighReasoning(model) ? "high" : "xhigh";
+  return lowerReasoningEffort(lowerReasoningEffort(normalized, accountCap), modelCap);
 }
 function copyCleanDir(sourceDir, targetDir) {
   fs3.rmSync(targetDir, { recursive: true, force: true });
@@ -647,6 +675,11 @@ async function materializeGlobalProfile(options) {
     paths
   });
   const rootModel = normalizeRootModel(profileConfig.model);
+  const effectiveEffort = effectiveCopilotReasoningEffort(options.reasoningEffort, rootModel, options.reasoningEffortCap);
+  const runtimeProfileConfig = effectiveEffort ? {
+    ...profileConfig,
+    effortLevel: effectiveEffort
+  } : profileConfig;
   await writeRuntimeAgentMirror(path2.join(repoRoot, "source", "agents"), paths.profileAgentsDir, { rootModel });
   copyCleanDir(path2.join(repoRoot, "skills"), paths.profileSkillsDir);
   copyCleanDir(path2.join(repoRoot, "scripts", "hooks"), paths.profileHookScriptsDir);
@@ -656,7 +689,7 @@ async function materializeGlobalProfile(options) {
   fs3.chmodSync(paths.updaterScriptPath, 493);
   fs3.copyFileSync(path2.join(repoRoot, ".github", "mcp.json"), paths.profileMcpConfigPath);
   fs3.copyFileSync(path2.join(repoRoot, "lsp.json"), paths.profileLspConfigPath);
-  fs3.writeFileSync(paths.profileConfigPath, `${JSON.stringify(profileConfig, null, 2)}
+  fs3.writeFileSync(paths.profileConfigPath, `${JSON.stringify(runtimeProfileConfig, null, 2)}
 `);
   return {
     paths,
@@ -692,6 +725,7 @@ function writeGlobalInstallState(opts) {
     rawCopilotBin: opts.rawCopilotBin,
     permissionMode: opts.permissionMode ?? "ask",
     reasoningEffort: normalizeXgcReasoningEffort(opts.reasoningEffort),
+    reasoningEffortCap: normalizeXgcReasoningEffortCap(opts.reasoningEffortCap),
     updateChannel: opts.updateChannel ?? "stable",
     updateTrack,
     updatePolicy,
@@ -720,6 +754,7 @@ function writeGlobalShellEnv(opts) {
     `export XGC_HOOK_SCRIPT_ROOT=${shellQuote(opts.paths.profileHookScriptsDir)}`,
     `export XGC_PERMISSION_MODE=${shellQuote(opts.permissionMode ?? "ask")}`,
     `export XGC_REASONING_EFFORT=${shellQuote(normalizeXgcReasoningEffort(opts.reasoningEffort))}`,
+    `export XGC_REASONING_EFFORT_CAP=${shellQuote(normalizeXgcReasoningEffortCap(opts.reasoningEffortCap))}`,
     `export XGC_AUTO_UPDATE_MODE=${shellQuote(normalizeAutoUpdateMode(opts.autoUpdateMode))}`
   ];
   if (rawCopilotBin) {
@@ -742,6 +777,7 @@ function parseArgs(argv) {
     rawCopilotBinFromCli: false,
     permissionMode: normalizeXgcPermissionMode(process.env.XGC_PERMISSION_MODE),
     reasoningEffort: normalizeXgcReasoningEffort(process.env.XGC_REASONING_EFFORT),
+    reasoningEffortCap: normalizeXgcReasoningEffortCap(process.env.XGC_REASONING_EFFORT_CAP),
     installSource: "repo-checkout",
     releaseRepo: process.env.GITHUB_REPOSITORY || "Juhwa-Lee1023/x-for-github-copilot",
     releaseTag: null,
@@ -775,6 +811,19 @@ function parseArgs(argv) {
       }
       args2.reasoningEffort = effort;
       index += 1;
+    } else if ((current === "--reasoning-effort-cap" || current === "--effort-cap") && argv[index + 1]) {
+      const cap = argv[index + 1];
+      if (!isXgcReasoningEffortCap(cap)) {
+        throw new Error(`Invalid --reasoning-effort-cap: ${cap}. Expected low, medium, high, or xhigh.`);
+      }
+      args2.reasoningEffortCap = cap;
+      index += 1;
+    } else if (current.startsWith("--reasoning-effort-cap=") || current.startsWith("--effort-cap=")) {
+      const cap = current.split("=", 2)[1] ?? "";
+      if (!isXgcReasoningEffortCap(cap)) {
+        throw new Error(`Invalid --reasoning-effort-cap: ${cap}. Expected low, medium, high, or xhigh.`);
+      }
+      args2.reasoningEffortCap = cap;
     } else if (current === "--install-source" && argv[index + 1]) {
       const source = argv[index + 1];
       if (source !== "repo-checkout" && source !== "release-artifact" && source !== "npm-package") {
@@ -814,6 +863,8 @@ try {
   const result = await materializeGlobalProfile({
     repoRoot: args.repoRoot,
     homeDir: args.homeDir,
+    reasoningEffort: args.reasoningEffort,
+    reasoningEffortCap: args.reasoningEffortCap,
     requireRuntimeDist: args.installSource !== "repo-checkout"
   });
   writeGlobalShellEnv({
@@ -823,6 +874,7 @@ try {
     repoRoot: args.repoRoot,
     permissionMode: args.permissionMode,
     reasoningEffort: args.reasoningEffort,
+    reasoningEffortCap: args.reasoningEffortCap,
     autoUpdateMode: args.autoUpdateMode
   });
   writeGlobalInstallState({
@@ -831,6 +883,7 @@ try {
     rawCopilotBin,
     permissionMode: args.permissionMode,
     reasoningEffort: args.reasoningEffort,
+    reasoningEffortCap: args.reasoningEffortCap,
     installSource: args.installSource,
     releaseRepo: args.releaseRepo,
     releaseTag: args.releaseTag,
@@ -845,6 +898,7 @@ try {
   console.log(`raw copilot binary: ${rawCopilotBin ?? "not found; shim will resolve from PATH at shell load time"}`);
   console.log(`permission mode: ${args.permissionMode}`);
   console.log(`reasoning effort: ${args.reasoningEffort}`);
+  console.log(`reasoning effort cap: ${args.reasoningEffortCap}`);
   console.log(`auto update mode: ${args.autoUpdateMode}`);
   console.log(`copied agents: ${result.copiedAgents.length}`);
   console.log(`copied skills: ${result.copiedSkills.length}`);
