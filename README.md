@@ -29,6 +29,8 @@ Manual install:
 npx x-for-github-copilot install
 ```
 
+For scripted or agent-driven installs, use the non-interactive command in the LLM Agents section below.
+
 Bun equivalent:
 
 ```bash
@@ -46,10 +48,12 @@ curl -fsSL https://raw.githubusercontent.com/Juhwa-Lee1023/x-for-github-copilot/
 Then follow the guide exactly:
 
 - ask the user which default permission mode to persist: `ask`, `work`, or `yolo`
-- run `npx x-for-github-copilot install --permission-mode <mode>`
-- verify with `npx x-for-github-copilot doctor`, then a fresh interactive shell
+- run `npx --yes x-for-github-copilot install --permission-mode <mode> --reasoning-effort xhigh --reasoning-effort-cap high`
+- keep `--yes` before the package name; it answers npm/npx package-install confirmation and does not choose the XGC permission mode
+- keep the default `--reasoning-effort-cap high` unless the user explicitly says their Copilot plan supports `xhigh`
+- verify with `npx --yes x-for-github-copilot doctor`, then a fresh interactive shell
 - explain how to start: open a new terminal and run plain `copilot`
-- mention `copilot_raw` for bypassing XGC and `xgc_mode ask|work|yolo` for changing the current shell mode
+- mention `copilot_raw` for bypassing XGC, `xgc_mode ask|work|yolo` for changing the current shell mode, and `xgc_effort_cap xhigh` only for accounts confirmed to support `xhigh`
 
 You do not need to call subagents with slash commands. Plain `copilot` is the intended front door; XGC handles routing from there.
 
@@ -99,6 +103,7 @@ It distinguishes between:
 - committed diff truth
 - summary authority
 - archive completeness
+- validation command truth, including expected no-match search checks
 - explicit / strong-indirect / weak / unproven evidence
 
 It does not promise universal premium-request reduction, and it keeps local route evidence separate from provider billing truth.

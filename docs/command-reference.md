@@ -8,9 +8,11 @@ X for GitHub Copilot currently supports GitHub Copilot CLI workflows. It is an i
 ## Shell Entrypoints
 
 - `npx x-for-github-copilot install`
-  packaged runtime install that materializes the dedicated XGC profile and shell shim without requiring a repo clone first
+  interactive/manual packaged runtime install that materializes the dedicated XGC profile and shell shim without requiring a repo clone first
+- `npx --yes x-for-github-copilot install --permission-mode <mode> --reasoning-effort xhigh --reasoning-effort-cap high`
+  agent/scripted packaged runtime install; `--yes` must appear before the package name because it answers npm/npx package-install confirmation, while `--permission-mode` chooses XGC's persisted permission behavior
 - `bunx x-for-github-copilot install`
-  same packaged runtime install path through Bun
+  same packaged runtime install path through Bun for humans who specifically prefer Bun
 - `copilot`
   enters X for GitHub Copilot global profile mode through the `Repo Master` orchestration front door unless you pass an explicit `--agent`
 - `copilot_raw`
@@ -39,8 +41,12 @@ X for GitHub Copilot currently supports GitHub Copilot CLI workflows. It is an i
   routes directly to the bounded high-accuracy review lane `Required Check`
 - `xgc_mode`
   prints or switches the current shell permission mode: `ask`, `work`, or `yolo`
+- `xgc_effort_cap`
+  prints or switches the current shell reasoning-effort cap: `low`, `medium`, `high`, or `xhigh`
 - `XGC_REASONING_EFFORT`
-  environment override for the reasoning-effort flag injected into XGC Copilot runs; default is `xhigh`, and `off` disables injection
+  environment override for the desired reasoning-effort flag injected into XGC Copilot runs; default requests `xhigh`, and `off` disables injection
+- `XGC_REASONING_EFFORT_CAP`
+  environment cap for the injected reasoning effort; default is `high` for account/subscription safety, and `xhigh` should be used only when the account supports it
 - `xgc_update`
   compatibility alias for `xgc update`
 - `xgc_preflight`

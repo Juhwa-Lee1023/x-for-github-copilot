@@ -867,6 +867,37 @@ test("summarizeValidationLog ignores transient MCP connection noise after valida
   assert.deepEqual(summary.validationCommandFailures, []);
 });
 
+test("summarizeValidationLog treats expected search no-match probes as validation noise", () => {
+  const summary = summarizeValidationLog(
+    [
+      "rg -n \"<body class=|theme-light|theme-dark\" chrome-extension/popup.html chrome-extension/options.html chrome-extension/detail.html",
+      "<exited with exit code 1>",
+      "validation no-match check passed: Check removed body theme classes",
+      "validation command passed: Run JS syntax and diff checks"
+    ].join("\n")
+  );
+
+  assert.equal(summary.validationObserved, true);
+  assert.equal(summary.validationStatus, "passed");
+  assert.equal(summary.validationOverclaimObserved, false);
+  assert.deepEqual(summary.validationCommandFailures, []);
+});
+
+test("summarizeValidationLog does not recover validation command failures from unrelated later passes", () => {
+  const summary = summarizeValidationLog(
+    [
+      "validation command failed: Verify required markup exists exited with exit code 1",
+      "validation command passed: Run JS syntax and diff checks"
+    ].join("\n")
+  );
+
+  assert.equal(summary.validationObserved, true);
+  assert.equal(summary.validationStatus, "failed");
+  assert.equal(summary.validationRawStatus, "failed");
+  assert.equal(summary.validationOverclaimObserved, true);
+  assert.match(summary.validationCommandFailures.join("\n"), /Verify required markup exists/);
+});
+
 test("summarizeRouteObservations reports direct handling and grounding order conservatively", () => {
   const processLog = [
     '2026-04-07T12:53:08.642Z [INFO] Custom agent "Patch Master" invoked with prompt: ...',
@@ -895,6 +926,7 @@ test("summarizeRouteObservations reports direct handling and grounding order con
   assert.equal(route.observedFrontDoorHandledDirectly, false);
   assert.equal(route.observedScoutCount, 2);
   assert.equal(route.repoScoutInvocationCount, 2);
+  assert.equal(route.repoScoutDuplicateObserved, true);
   assert.equal(route.triageInvocationCount, 1);
   assert.equal(route.patchMasterInvocationCount, 1);
   assert.equal(route.requiredCheckInvocationCount, 0);
@@ -1987,6 +2019,19 @@ test("summarizeRouteObservations does not allow duplicate Triage from name-list 
   assert.equal(route.triageDuplicateObserved, true);
   assert.equal(route.executionReadyHandoffSeenBeforeSecondTriage, false);
   assert.equal(route.triageDuplicateAllowedReason, "no_post_triage_milestone_completion_observed_before_second_triage");
+});
+
+test("summarizeRouteObservations keeps single Repo Scout from duplicate warning", () => {
+  const route = summarizeRouteObservations({
+    agentId: "repo-master",
+    agentLane: "front-door",
+    observedSubagents: ["Repo Master", "Repo Scout", "Milestone", "Patch Master"],
+    observedSubagentCounts: { "Repo Scout": 1, Milestone: 1, "Patch Master": 1 },
+    stdout: ""
+  });
+
+  assert.equal(route.repoScoutInvocationCount, 1);
+  assert.equal(route.repoScoutDuplicateObserved, false);
 });
 
 test("summarizeRouteObservations flags root patching after Patch Master completes", () => {

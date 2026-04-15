@@ -67,6 +67,7 @@ export type LatestSessionTruth = {
   validationArtifactFileCount: number;
   keyAgents: string[];
   repoScoutInvocationCount: number | null;
+  repoScoutDuplicateObserved: boolean | null;
   triageInvocationCount: number | null;
   patchMasterInvocationCount: number | null;
   requiredCheckInvocationCount: number | null;
@@ -369,6 +370,7 @@ export function renderRuntimeSourceReportMarkdown(report: RuntimeSourceReport) {
     lines.push(`- Validation artifact files: ${truth.validationArtifactFileCount}`);
     lines.push(`- Key agents: ${truth.keyAgents.length > 0 ? truth.keyAgents.join(", ") : "none"}`);
     lines.push(`- Repo Scout invocation count: ${truth.repoScoutInvocationCount ?? "unknown"}`);
+    lines.push(`- Repo Scout duplicate observed: ${renderNullableBoolean(truth.repoScoutDuplicateObserved)}`);
     lines.push(`- Triage invocation count: ${truth.triageInvocationCount ?? "unknown"}`);
     lines.push(`- Patch Master invocation count: ${truth.patchMasterInvocationCount ?? "unknown"}`);
     lines.push(`- Required Check invocation count: ${truth.requiredCheckInvocationCount ?? "unknown"}`);

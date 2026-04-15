@@ -36,7 +36,9 @@ test("README stays concise while preserving install, support, and lineage bounda
   assert.match(readme, /https:\/\/raw\.githubusercontent\.com\/Juhwa-Lee1023\/x-for-github-copilot\/refs\/heads\/main\/docs\/install\.md/i);
   assert.match(readme, /use `curl` to fetch the installation guide, not WebFetch/i);
   assert.match(readme, /ask the user which default permission mode to persist/i);
-  assert.match(readme, /npx x-for-github-copilot doctor/i);
+  assert.match(readme, /npx --yes x-for-github-copilot install --permission-mode <mode> --reasoning-effort xhigh --reasoning-effort-cap high/i);
+  assert.match(readme, /`--yes` before the package name/i);
+  assert.match(readme, /npx --yes x-for-github-copilot doctor/i);
   assert.match(readme, /Plain `copilot` is the intended front door/i);
   assert.match(readme, /## Read Next/);
   assert.match(readme, /\[docs\/install\.md\]\(docs\/install\.md\)/);
@@ -95,6 +97,8 @@ test("primary product docs do not teach intermediate or legacy runtime-facing na
   assert.match(primaryDocs, /copilot_raw/);
   assert.match(primaryDocs, /xgc_update/);
   assert.match(primaryDocs, /npx x-for-github-copilot install/i);
+  assert.match(primaryDocs, /npx --yes x-for-github-copilot install/i);
+  assert.match(primaryDocs, /Ok to proceed\? \(y\)/i);
   assert.match(primaryDocs, /npx x-for-github-copilot uninstall/i);
   assert.match(primaryDocs, /npx x-for-github-copilot doctor/i);
   assert.match(primaryDocs, /uninstall-global-xgc\.sh/);

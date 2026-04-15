@@ -4,7 +4,13 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { materializeGlobalProfile, resolveGlobalPaths, writeGlobalInstallState, writeGlobalShellEnv } from "../scripts/lib/global-xgc.js";
+import {
+  effectiveCopilotReasoningEffort,
+  materializeGlobalProfile,
+  resolveGlobalPaths,
+  writeGlobalInstallState,
+  writeGlobalShellEnv
+} from "../scripts/lib/global-xgc.js";
 import { resolveAgentModelPolicy } from "../scripts/lib/model-policy.js";
 import {
   commandUsesUnsafeWorkspaceHookPath,
@@ -24,7 +30,8 @@ const sanitizedXgcEnvPrelude = [
   "unset XGC_SESSION_ENV_FILE",
   "unset XGC_HOOK_SCRIPT_ROOT",
   "unset XGC_PERMISSION_MODE",
-  "unset XGC_REASONING_EFFORT"
+  "unset XGC_REASONING_EFFORT",
+  "unset XGC_REASONING_EFFORT_CAP"
 ].join("; ");
 
 function shellQuote(value: string) {
@@ -341,12 +348,14 @@ test("materializeGlobalProfile creates a dedicated XGC profile with user-level a
 
   const profileConfig = JSON.parse(fs.readFileSync(result.configPath, "utf8")) as {
     model?: string;
+    effortLevel?: string;
     logged_in_users?: unknown[];
     trusted_folders?: string[];
     custom_agents?: { default_local_only?: boolean };
     installed_plugins?: unknown[];
   };
   assert.equal(profileConfig.model, undefined);
+  assert.equal(profileConfig.effortLevel, "high");
   assert.equal(Array.isArray(profileConfig.logged_in_users), true);
   assert.equal(profileConfig.custom_agents?.default_local_only, true);
   assert.ok(profileConfig.trusted_folders?.includes(tempRepo));
@@ -383,9 +392,23 @@ test("writeGlobalInstallState records update track and policy metadata", () => {
   assert.equal(installState.autoUpdateMode, "check");
   assert.equal(installState.permissionMode, "work");
   assert.equal(installState.reasoningEffort, "xhigh");
+  assert.equal(installState.reasoningEffortCap, "high");
   assert.equal(installState.runtimeHome, paths.runtimeHome);
   assert.equal(installState.runtimeCurrentPath, paths.runtimeCurrentPath);
   assert.equal(installState.runtimeCurrentBinPath, paths.runtimeCurrentBinPath);
+});
+
+test("effective reasoning effort applies account cap before model support", () => {
+  assert.equal(effectiveCopilotReasoningEffort("xhigh", "claude-sonnet-4.6"), "high");
+  assert.equal(effectiveCopilotReasoningEffort("xhigh", "google/gemini-3.1-pro"), "high");
+  assert.equal(effectiveCopilotReasoningEffort("xhigh", "gpt-4.1"), "high");
+  assert.equal(effectiveCopilotReasoningEffort("xhigh", "gpt-5.4"), "high");
+  assert.equal(effectiveCopilotReasoningEffort("xhigh", "gpt-5.4", "xhigh"), "xhigh");
+  assert.equal(effectiveCopilotReasoningEffort("xhigh", "gpt-5.4-mini", "xhigh"), "xhigh");
+  assert.equal(effectiveCopilotReasoningEffort("xhigh", "claude-sonnet-4.6", "xhigh"), "high");
+  assert.equal(effectiveCopilotReasoningEffort("xhigh", "gpt-5.4", "medium"), "medium");
+  assert.equal(effectiveCopilotReasoningEffort("high", "gpt-5.4"), "high");
+  assert.equal(effectiveCopilotReasoningEffort("off", "gpt-5.4"), null);
 });
 
 test("writeGlobalShellEnv preserves an existing raw Copilot binary when re-materialized without an explicit raw path", () => {
@@ -400,6 +423,7 @@ test("writeGlobalShellEnv preserves an existing raw Copilot binary when re-mater
   assert.match(profileEnv, new RegExp(`XGC_RUNTIME_HOME=${shellQuote(paths.runtimeCurrentPath).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
   assert.match(profileEnv, /XGC_PERMISSION_MODE='ask'/);
   assert.match(profileEnv, /XGC_REASONING_EFFORT='xhigh'/);
+  assert.match(profileEnv, /XGC_REASONING_EFFORT_CAP='high'/);
   assert.match(profileEnv, /XGC_AUTO_UPDATE_MODE='check'/);
   assert.match(profileEnv, new RegExp(`XGC_COPILOT_RAW_BIN=${shellQuote(rawBin).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
 });
@@ -2426,6 +2450,7 @@ test("env.sh cannot override shell operational settings at invocation time", () 
       "export XGC_COPILOT_PROFILE_HOME='/tmp/stale-profile-from-env-sh'",
       "export XGC_COPILOT_RAW_BIN='/tmp/stale-raw-bin-from-env-sh'",
       "export XGC_REASONING_EFFORT='xhigh'",
+      "export XGC_REASONING_EFFORT_CAP='xhigh'",
       "export COPILOT_HOME='/tmp/stale-copilot-home-from-env-sh'",
       "export PATH='/tmp/stale-path-from-env-sh'",
       "export XGC_SESSION_TEST_SECRET='still-loaded'"
@@ -2442,6 +2467,7 @@ test("env.sh cannot override shell operational settings at invocation time", () 
         `export XGC_COPILOT_RAW_BIN='${rawBin.replace(/'/g, `'\\''`)}'`,
         "export XGC_PERMISSION_MODE='work'",
         "export XGC_REASONING_EFFORT='off'",
+        "export XGC_REASONING_EFFORT_CAP='high'",
         `source '${path.join(repoRoot, "scripts/xgc-shell.sh").replace(/'/g, `'\\''`)}'`,
         "copilot --prompt 'hi'"
       ].join("; ")
@@ -2884,7 +2910,7 @@ test("permission modes inject documented approval flags", () => {
   assert.ok(!explicitPermissionCall.argv.includes("--allow-all"));
 });
 
-test("reasoning effort defaults to xhigh unless explicitly overridden", () => {
+test("reasoning effort defaults to the configured account cap unless explicitly overridden", () => {
   const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "xgc-shell-reasoning-effort-"));
   const rawBin = createFakeRawCopilot(tempHome);
 
@@ -2893,7 +2919,49 @@ test("reasoning effort defaults to xhigh unless explicitly overridden", () => {
     rawBin,
     fnCall: "copilot --prompt 'hi'"
   });
-  assert.ok(defaultCall.argv.includes("--reasoning-effort=xhigh"));
+  assert.ok(defaultCall.argv.includes("--reasoning-effort=high"));
+  assert.ok(!defaultCall.argv.includes("--reasoning-effort=xhigh"));
+
+  const highOnlyModelCall = sourceShimAndRun({
+    tempHome,
+    rawBin,
+    fnCall: "copilot --model claude-sonnet-4.6 --prompt 'hi'"
+  });
+  assert.ok(highOnlyModelCall.argv.includes("--reasoning-effort=high"));
+  assert.ok(!highOnlyModelCall.argv.includes("--reasoning-effort=xhigh"));
+
+  const xhighModelCall = sourceShimAndRun({
+    tempHome,
+    rawBin,
+    fnCall: "copilot --model gpt-5.4 --prompt 'hi'"
+  });
+  assert.ok(xhighModelCall.argv.includes("--reasoning-effort=high"));
+  assert.ok(!xhighModelCall.argv.includes("--reasoning-effort=xhigh"));
+
+  const xhighCapableModelCall = sourceShimAndRun({
+    tempHome,
+    rawBin,
+    fnCall: "export XGC_REASONING_EFFORT_CAP=xhigh; copilot --model gpt-5.4 --prompt 'hi'"
+  });
+  assert.ok(xhighCapableModelCall.argv.includes("--reasoning-effort=xhigh"));
+
+  const helperCapCall = sourceShimAndRun({
+    tempHome,
+    rawBin,
+    fnCall: "xgc_effort_cap xhigh >/dev/null; copilot --model gpt-5.4 --prompt 'hi'"
+  });
+  assert.ok(helperCapCall.argv.includes("--reasoning-effort=xhigh"));
+
+  const profileAgentsDir = path.join(tempHome, ".copilot-xgc", "agents");
+  fs.mkdirSync(profileAgentsDir, { recursive: true });
+  fs.writeFileSync(path.join(profileAgentsDir, "milestone.agent.md"), "---\nname: Milestone\nmodel: claude-sonnet-4.6\n---\n");
+  const highOnlyAgentCall = sourceShimAndRun({
+    tempHome,
+    rawBin,
+    fnCall: "xgc_plan --prompt 'hi'"
+  });
+  assert.ok(highOnlyAgentCall.argv.includes("--reasoning-effort=high"));
+  assert.ok(!highOnlyAgentCall.argv.includes("--reasoning-effort=xhigh"));
 
   const explicitLongFlagCall = sourceShimAndRun({
     tempHome,

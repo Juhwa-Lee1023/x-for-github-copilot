@@ -744,6 +744,7 @@ test("session summary finalizer refreshes updated_at and separates repo/state/va
   assert.deepEqual(summary.route_agents, ["Repo Master", "Milestone", "Patch Master"]);
   assert.deepEqual(summary.key_agents, ["Repo Master", "Milestone", "Patch Master"]);
   assert.equal(summary.repo_scout_invocation_count, 0);
+  assert.equal(summary.repo_scout_duplicate_observed, false);
   assert.equal(summary.triage_invocation_count, 0);
   assert.equal(summary.patch_master_invocation_count, 1);
   assert.equal(summary.required_check_invocation_count, 0);
@@ -1641,6 +1642,9 @@ test("session summary finalizer preserves duplicate Triage and Patch Master invo
       JSON.stringify({ type: "subagent.started", timestamp: "2026-04-10T04:48:46.975Z", data: { agentDisplayName: "Repo Master" } }),
       JSON.stringify({ type: "subagent.started", timestamp: "2026-04-10T04:48:48.087Z", data: { agentDisplayName: "Milestone" } }),
       JSON.stringify({ type: "subagent.started", timestamp: "2026-04-10T04:49:02.343Z", data: { agentDisplayName: "Repo Scout" } }),
+      JSON.stringify({ type: "subagent.completed", timestamp: "2026-04-10T04:49:40.000Z", data: { agentDisplayName: "Repo Scout" } }),
+      JSON.stringify({ type: "subagent.started", timestamp: "2026-04-10T04:49:42.000Z", data: { agentDisplayName: "Repo Scout" } }),
+      JSON.stringify({ type: "subagent.completed", timestamp: "2026-04-10T04:49:55.000Z", data: { agentDisplayName: "Repo Scout" } }),
       JSON.stringify({ type: "subagent.started", timestamp: "2026-04-10T04:49:57.500Z", data: { agentDisplayName: "Ref Index" } }),
       JSON.stringify({ type: "subagent.started", timestamp: "2026-04-10T04:51:42.023Z", data: { agentDisplayName: "Triage" } }),
       JSON.stringify({ type: "subagent.completed", timestamp: "2026-04-10T04:54:22.341Z", data: { agentDisplayName: "Triage" } }),
@@ -1705,12 +1709,13 @@ test("session summary finalizer preserves duplicate Triage and Patch Master invo
   assert.equal(summary.latest_event_at, "2026-04-10T05:27:30.061Z");
   assert.equal(
     summary.route_summary,
-    "Repo Master -> Milestone -> Repo Scout -> Ref Index -> Triage -> Triage -> Patch Master -> Patch Master"
+    "Repo Master -> Milestone -> Repo Scout -> Repo Scout -> Ref Index -> Triage -> Triage -> Patch Master -> Patch Master"
   );
   assert.equal(summary.route_summary_source, "started_with_fallbacks");
   assert.deepEqual(summary.route_agents, [
     "Repo Master",
     "Milestone",
+    "Repo Scout",
     "Repo Scout",
     "Ref Index",
     "Triage",
@@ -1719,7 +1724,8 @@ test("session summary finalizer preserves duplicate Triage and Patch Master invo
     "Patch Master"
   ]);
   assert.deepEqual(summary.key_agents, ["Repo Master", "Milestone", "Repo Scout", "Ref Index", "Triage", "Patch Master"]);
-  assert.equal(summary.repo_scout_invocation_count, 1);
+  assert.equal(summary.repo_scout_invocation_count, 2);
+  assert.equal(summary.repo_scout_duplicate_observed, true);
   assert.equal(summary.triage_invocation_count, 2);
   assert.equal(summary.patch_master_invocation_count, 2);
   assert.equal(summary.required_check_invocation_count, 0);
@@ -4967,6 +4973,255 @@ test("session summary finalizer detects validation overclaim from raw failure ev
   assert.equal(summary.session_outcome, "incomplete");
   assert.equal(summary.session_outcome_detail, "execution_handoff_without_repo_changes");
   assert.equal(summary.archive_completeness, "partial");
+});
+
+test("session summary finalizer treats expected search no-match checks as validation passes", (t) => {
+  if (spawnSync("bash", ["-lc", "command -v python3"], { encoding: "utf8" }).status !== 0) {
+    t.skip("python3 unavailable");
+    return;
+  }
+
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "xgc-session-summary-validation-no-match-"));
+  const workspaceRoot = path.join(tempRoot, "workspace");
+  const profileHome = path.join(tempRoot, ".copilot-xgc");
+  const configHome = path.join(tempRoot, ".config", "xgc");
+  const sessionId = "session-validation-no-match";
+  const sessionDir = path.join(profileHome, "session-state", sessionId);
+  const transcriptPath = path.join(sessionDir, "events.jsonl");
+  const workspaceYaml = path.join(sessionDir, "workspace.yaml");
+
+  fs.mkdirSync(sessionDir, { recursive: true });
+  fs.mkdirSync(workspaceRoot, { recursive: true });
+  fs.writeFileSync(
+    workspaceYaml,
+    [
+      `id: ${sessionId}`,
+      `cwd: ${workspaceRoot}`,
+      `git_root: ${workspaceRoot}`,
+      "created_at: 2026-04-12T00:00:00.000Z",
+      ""
+    ].join("\n")
+  );
+  fs.writeFileSync(
+    transcriptPath,
+    [
+      JSON.stringify({ type: "session.start", timestamp: "2026-04-12T00:00:00.000Z" }),
+      JSON.stringify({
+        type: "tool.execution_start",
+        timestamp: "2026-04-12T00:01:00.000Z",
+        data: {
+          toolCallId: "call_search_no_match",
+          toolName: "bash",
+          arguments: {
+            command:
+              'cd /tmp/workspace && rg -n "<body class=|theme-light|theme-dark" chrome-extension/popup.html chrome-extension/options.html chrome-extension/detail.html',
+            description: "Check removed body theme classes"
+          }
+        }
+      }),
+      JSON.stringify({
+        type: "tool.execution_complete",
+        timestamp: "2026-04-12T00:01:01.000Z",
+        data: {
+          toolCallId: "call_search_no_match",
+          result: { content: "\n<exited with exit code 1>", detailedContent: "\n<exited with exit code 1>" }
+        }
+      }),
+      JSON.stringify({
+        type: "tool.execution_start",
+        timestamp: "2026-04-12T00:02:00.000Z",
+        data: {
+          toolCallId: "call_validation",
+          toolName: "bash",
+          arguments: {
+            command:
+              "node --check chrome-extension/popup.js && node --check chrome-extension/options.js && node --check chrome-extension/detail.js && git --no-pager diff --check -- chrome-extension/popup.js chrome-extension/options.js chrome-extension/detail.js",
+            description: "Run JS syntax and diff checks"
+          }
+        }
+      }),
+      JSON.stringify({
+        type: "tool.execution_complete",
+        timestamp: "2026-04-12T00:02:01.000Z",
+        data: {
+          toolCallId: "call_validation",
+          result: { content: "\n<exited with exit code 0>", detailedContent: "\n<exited with exit code 0>" }
+        }
+      }),
+      JSON.stringify({
+        type: "assistant.message",
+        timestamp: "2026-04-12T00:03:00.000Z",
+        data: { content: "Execution status: complete" }
+      })
+    ].join("\n") + "\n"
+  );
+
+  const result = spawnSync("python3", [path.join(repoRoot, "scripts/hooks/finalize-session-summary.py"), "agentStop"], {
+    encoding: "utf8",
+    input: JSON.stringify({
+      sessionId,
+      timestamp: Date.parse("2026-04-12T00:04:00.000Z"),
+      cwd: workspaceRoot,
+      transcriptPath,
+      stopReason: "end_turn"
+    }),
+    env: {
+      ...process.env,
+      XGC_COPILOT_PROFILE_HOME: profileHome,
+      XGC_COPILOT_CONFIG_HOME: configHome
+    }
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const summary = parseWorkspaceYaml(workspaceYaml);
+  assert.equal(summary.validation_observed, true);
+  assert.equal(summary.validation_status, "passed");
+  assert.equal(summary.validation_raw_status, "passed");
+  assert.equal(summary.validation_overclaim_observed, false);
+  assert.deepEqual(summary.validation_command_failures, []);
+});
+
+function runSearchValidationFinalizerCase(opts: {
+  sessionLabel: string;
+  command: string;
+  description: string;
+  exitCode: number;
+}) {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), `xgc-session-summary-${opts.sessionLabel}-`));
+  const workspaceRoot = path.join(tempRoot, "workspace");
+  const profileHome = path.join(tempRoot, ".copilot-xgc");
+  const configHome = path.join(tempRoot, ".config", "xgc");
+  const sessionId = `session-${opts.sessionLabel}`;
+  const sessionDir = path.join(profileHome, "session-state", sessionId);
+  const transcriptPath = path.join(sessionDir, "events.jsonl");
+  const workspaceYaml = path.join(sessionDir, "workspace.yaml");
+
+  fs.mkdirSync(sessionDir, { recursive: true });
+  fs.mkdirSync(workspaceRoot, { recursive: true });
+  fs.writeFileSync(
+    workspaceYaml,
+    [
+      `id: ${sessionId}`,
+      `cwd: ${workspaceRoot}`,
+      `git_root: ${workspaceRoot}`,
+      "created_at: 2026-04-12T00:00:00.000Z",
+      ""
+    ].join("\n")
+  );
+  fs.writeFileSync(
+    transcriptPath,
+    [
+      JSON.stringify({ type: "session.start", timestamp: "2026-04-12T00:00:00.000Z" }),
+      JSON.stringify({
+        type: "tool.execution_start",
+        timestamp: "2026-04-12T00:01:00.000Z",
+        data: {
+          toolCallId: "call_search_validation",
+          toolName: "bash",
+          arguments: {
+            command: opts.command,
+            description: opts.description
+          }
+        }
+      }),
+      JSON.stringify({
+        type: "tool.execution_complete",
+        timestamp: "2026-04-12T00:01:01.000Z",
+        data: {
+          toolCallId: "call_search_validation",
+          result: {
+            content: `\n<exited with exit code ${opts.exitCode}>`,
+            detailedContent: `\n<exited with exit code ${opts.exitCode}>`
+          }
+        }
+      }),
+      JSON.stringify({
+        type: "tool.execution_start",
+        timestamp: "2026-04-12T00:02:00.000Z",
+        data: {
+          toolCallId: "call_validation",
+          toolName: "bash",
+          arguments: {
+            command:
+              "node --check chrome-extension/popup.js && node --check chrome-extension/options.js && node --check chrome-extension/detail.js && git --no-pager diff --check -- chrome-extension/popup.js chrome-extension/options.js chrome-extension/detail.js",
+            description: "Run JS syntax and diff checks"
+          }
+        }
+      }),
+      JSON.stringify({
+        type: "tool.execution_complete",
+        timestamp: "2026-04-12T00:02:01.000Z",
+        data: {
+          toolCallId: "call_validation",
+          result: { content: "\n<exited with exit code 0>", detailedContent: "\n<exited with exit code 0>" }
+        }
+      }),
+      JSON.stringify({
+        type: "assistant.message",
+        timestamp: "2026-04-12T00:03:00.000Z",
+        data: { content: "Execution status: complete" }
+      })
+    ].join("\n") + "\n"
+  );
+
+  const result = spawnSync("python3", [path.join(repoRoot, "scripts/hooks/finalize-session-summary.py"), "agentStop"], {
+    encoding: "utf8",
+    input: JSON.stringify({
+      sessionId,
+      timestamp: Date.parse("2026-04-12T00:04:00.000Z"),
+      cwd: workspaceRoot,
+      transcriptPath,
+      stopReason: "end_turn"
+    }),
+    env: {
+      ...process.env,
+      XGC_COPILOT_PROFILE_HOME: profileHome,
+      XGC_COPILOT_CONFIG_HOME: configHome
+    }
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  return parseWorkspaceYaml(workspaceYaml);
+}
+
+test("session summary finalizer fails validation search misses for presence checks", (t) => {
+  if (spawnSync("bash", ["-lc", "command -v python3"], { encoding: "utf8" }).status !== 0) {
+    t.skip("python3 unavailable");
+    return;
+  }
+
+  const summary = runSearchValidationFinalizerCase({
+    sessionLabel: "validation-search-presence-miss",
+    command: 'cd /tmp/workspace && rg -n "required-marker" src/page.tsx',
+    description: "Verify required markup exists",
+    exitCode: 1
+  });
+
+  assert.equal(summary.validation_observed, true);
+  assert.equal(summary.validation_status, "failed");
+  assert.equal(summary.validation_raw_status, "failed");
+  assert.equal(summary.validation_overclaim_observed, true);
+  assert.match((summary.validation_command_failures as string[]).join("\n"), /Verify required markup exists/);
+});
+
+test("session summary finalizer reports validation search command errors", (t) => {
+  if (spawnSync("bash", ["-lc", "command -v python3"], { encoding: "utf8" }).status !== 0) {
+    t.skip("python3 unavailable");
+    return;
+  }
+
+  const summary = runSearchValidationFinalizerCase({
+    sessionLabel: "validation-search-usage-error",
+    command: 'cd /tmp/workspace && rg --bad-flag "theme-light" chrome-extension/popup.html',
+    description: "Check removed body theme classes",
+    exitCode: 2
+  });
+
+  assert.equal(summary.validation_observed, true);
+  assert.equal(summary.validation_status, "failed");
+  assert.equal(summary.validation_raw_status, "failed");
+  assert.equal(summary.validation_overclaim_observed, true);
+  assert.match((summary.validation_command_failures as string[]).join("\n"), /exit code 2/);
 });
 
 test("session summary finalizer lets repo-owned validation logs recover earlier raw failures", (t) => {

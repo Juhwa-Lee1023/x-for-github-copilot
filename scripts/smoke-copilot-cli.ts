@@ -127,6 +127,7 @@ type RuntimeCaseResult = {
   observedFrontDoorHandledDirectly: boolean | null;
   observedScoutCount: number;
   repoScoutInvocationCount: number;
+  repoScoutDuplicateObserved: boolean;
   triageInvocationCount: number;
   patchMasterInvocationCount: number;
   requiredCheckInvocationCount: number;
@@ -373,6 +374,7 @@ function emptyRouteSummary(): RouteObservationSummary {
     observedFrontDoorHandledDirectly: null,
     observedScoutCount: 0,
     repoScoutInvocationCount: 0,
+    repoScoutDuplicateObserved: false,
     triageInvocationCount: 0,
     patchMasterInvocationCount: 0,
     requiredCheckInvocationCount: 0,
@@ -1077,6 +1079,7 @@ function renderMarkdown(report: RuntimeValidationReport) {
     );
     lines.push(`- Observed scout count: ${runtimeCase.observedScoutCount}`);
     lines.push(`- Repo Scout invocation count: ${runtimeCase.repoScoutInvocationCount}`);
+    lines.push(`- Duplicate Repo Scout observed: ${runtimeCase.repoScoutDuplicateObserved ? "yes" : "no"}`);
     lines.push(`- Triage invocation count: ${runtimeCase.triageInvocationCount}`);
     lines.push(`- Patch Master invocation count: ${runtimeCase.patchMasterInvocationCount}`);
     lines.push(`- Required Check invocation count: ${runtimeCase.requiredCheckInvocationCount}`);
@@ -1857,6 +1860,7 @@ async function main() {
         observedFrontDoorHandledDirectly: routeSummary.observedFrontDoorHandledDirectly,
         observedScoutCount: routeSummary.observedScoutCount,
         repoScoutInvocationCount: routeSummary.repoScoutInvocationCount,
+        repoScoutDuplicateObserved: routeSummary.repoScoutDuplicateObserved,
         triageInvocationCount: routeSummary.triageInvocationCount,
         patchMasterInvocationCount: routeSummary.patchMasterInvocationCount,
         requiredCheckInvocationCount: routeSummary.requiredCheckInvocationCount,
@@ -2091,6 +2095,9 @@ async function main() {
       status = "failed";
       evidenceNotes.push("duplicate Triage observed after an execution-ready Milestone handoff");
     }
+    if (routeSummary.repoScoutDuplicateObserved) {
+      evidenceNotes.push("duplicate Repo Scout observed; inspect whether this was an intentional scout wave or redundant grounding");
+    }
     if (routeSummary.postExecutionRootWriteObserved) {
       status = "failed";
       evidenceNotes.push(
@@ -2185,6 +2192,7 @@ async function main() {
       observedFrontDoorHandledDirectly: routeSummary.observedFrontDoorHandledDirectly,
       observedScoutCount: routeSummary.observedScoutCount,
       repoScoutInvocationCount: routeSummary.repoScoutInvocationCount,
+      repoScoutDuplicateObserved: routeSummary.repoScoutDuplicateObserved,
       triageInvocationCount: routeSummary.triageInvocationCount,
       patchMasterInvocationCount: routeSummary.patchMasterInvocationCount,
       requiredCheckInvocationCount: routeSummary.requiredCheckInvocationCount,

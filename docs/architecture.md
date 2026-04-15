@@ -68,7 +68,7 @@ For non-trivial work, X for GitHub Copilot treats planning as a real subsystem r
 
 Cold-start repos should not jump directly from `Repo Master` to `Patch Master`.
 
-The planning lane is prompt-contract driven, not a runtime state machine. It should avoid broad re-investigation after a planner or executor has clearly taken ownership, and it should not force Triage or Required Check onto trivial, well-grounded, read-only work.
+The planning lane is prompt-contract driven, not a runtime state machine. It should avoid broad re-investigation after a planner or executor has clearly taken ownership, and it should not force Triage or Required Check onto trivial, well-grounded, read-only work. Repo Master should either let Milestone own grounding or pass a completed `Front-door grounding packet:` into Milestone; it should not launch an independent parallel Scout for the same scope.
 
 Integration-class tasks get a stricter ownership contract. That means work crossing feature boundaries, coordinating multiple sessions/subsystems, or touching shared surfaces such as schema, seed/setup, auth/session/config, global shell/navigation, dependency/build config, hooks, runtime validation, or generated runtime surfaces should declare shared-surface ownership and lightweight foundation readiness before deep execution. Once `Patch Master` starts that execution packet, built-in generic agents such as `Explore Agent` or `General Purpose Agent` should not reopen the flow unless a named blocker explicitly justifies it.
 
@@ -84,7 +84,7 @@ Specialist-lane contract is intentionally narrow:
 
 `Repo Scout` and `Ref Index` remain available grounding lanes. A scout wave can be useful when the repo is unfamiliar, the file set is unclear, or the task is broad enough to shard.
 
-The runtime should choose scout usage because it helps the work, not because a brittle task-name special case fired. Structure or architecture analysis can use scout/reference lanes, but it is not hardcoded to a fixed scout count.
+The runtime should choose scout usage because it helps the work, not because a brittle task-name special case fired. Structure or architecture analysis can use scout/reference lanes, but it is not hardcoded to a fixed scout count. If `repoScoutDuplicateObserved` appears without an explicit multi-scout wave, treat it as redundant grounding to investigate rather than a task failure.
 
 ## Runtime Hygiene
 

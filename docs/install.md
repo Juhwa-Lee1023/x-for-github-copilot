@@ -25,6 +25,8 @@ Or run the interactive installer yourself:
 npx x-for-github-copilot install
 ```
 
+For scripts and LLM agents, use the non-interactive `npx --yes ...` command in the agent section below. The `--yes` flag belongs before the package name because it answers npm/npx package-install confirmation, not XGC's permission-mode choice.
+
 Bun equivalent:
 
 ```bash
@@ -57,7 +59,7 @@ Then ask exactly one permission-mode question:
 Which default XGC permission mode should I persist: ask, work, or yolo?
 ```
 
-Use the answer as `<mode>` below. XGC defaults Copilot CLI reasoning effort to `xhigh` after install; do not ask a second question unless the user explicitly wants a lower effort.
+Use the answer as `<mode>` below. XGC stores `xhigh` as the desired effort, but caps the effective Copilot CLI flag to `high` by default because model entitlements can vary by account/subscription even for the same model name. Do not ask a second question; keep the safe cap unless the user explicitly says their Copilot plan supports `xhigh`.
 
 Mode meanings:
 
@@ -68,23 +70,19 @@ Mode meanings:
 ### Step 1: Run the installer
 
 ```bash
-npx x-for-github-copilot install --permission-mode <ask|work|yolo> --reasoning-effort xhigh
+npx --yes x-for-github-copilot install --permission-mode <ask|work|yolo> --reasoning-effort xhigh --reasoning-effort-cap high
 ```
 
-Bun equivalent if the user specifically prefers Bun:
+Keep `--yes` before `x-for-github-copilot`. It answers npm/npx's package-install prompt such as `Ok to proceed? (y)`, and it is separate from XGC's `--permission-mode`. Do not move it to the end of the command.
 
-```bash
-bunx x-for-github-copilot install --permission-mode <ask|work|yolo> --reasoning-effort xhigh
-```
-
-Do not clone the repo for normal user installation. The package installer uses the packaged runtime bundle.
+Do not switch this agent/non-interactive path to Bun just because Bun is installed; `npx --yes` is the documented confirmation-free path. Do not clone the repo for normal user installation. The package installer uses the packaged runtime bundle.
 
 ### Step 2: Verify setup
 
 Run:
 
 ```bash
-npx x-for-github-copilot doctor
+npx --yes x-for-github-copilot doctor
 ```
 
 Then verify a fresh interactive shell:
@@ -108,7 +106,7 @@ Tell the user:
 - open a new terminal, then run plain `copilot`
 - no slash command or direct subagent invocation is required for normal use
 - use `/model` inside Copilot CLI when they want to switch the root model
-- XGC injects `--reasoning-effort xhigh` by default; pass `--effort` / `--reasoning-effort`, or set `XGC_REASONING_EFFORT=off`, only when they intentionally want a different behavior
+- XGC defaults to an effective `--reasoning-effort high` for subscription safety; use `xgc_effort_cap xhigh`, install with `--reasoning-effort-cap xhigh`, pass `--effort` / `--reasoning-effort`, or set `XGC_REASONING_EFFORT=off` only when they intentionally want a different behavior
 - use `copilot_raw` to bypass XGC
 - use `xgc_mode ask|work|yolo` to change the current shell's permission mode
 
@@ -116,7 +114,7 @@ Do not stop at "install succeeded." Report the exact commands, exit codes, docto
 
 ### Step 4: If verification fails
 
-Do not claim success. Run `npx x-for-github-copilot doctor`, inspect the failure, and fix the concrete issue before retrying. If shell activation is the only problem, open a fresh terminal or source `~/.config/xgc/xgc-shell.sh`.
+Do not claim success. Run `npx --yes x-for-github-copilot doctor`, inspect the failure, and fix the concrete issue before retrying. If shell activation is the only problem, open a fresh terminal or source `~/.config/xgc/xgc-shell.sh`.
 
 ## What The Packaged Install Does
 
@@ -128,6 +126,8 @@ The package-based install flow:
 - appends the shell activation block by default
 - asks which permission mode to persist unless you pass `--permission-mode`
 - persists `XGC_REASONING_EFFORT=xhigh` unless you pass `--reasoning-effort <low|medium|high|xhigh|off>`
+- persists `XGC_REASONING_EFFORT_CAP=high` unless you pass `--reasoning-effort-cap <low|medium|high|xhigh>`
+- writes Copilot profile `effortLevel` as the effective account-and-model-capped value, so high-only accounts/models use `high` instead of falling back to Copilot's medium default
 - leaves plain `copilot` as the practical front door after a fresh shell reload
 
 Validation after package install:
@@ -194,7 +194,7 @@ This is a practical GitHub Copilot CLI front door for this project, not a built-
 
 Plain `copilot` in X for GitHub Copilot mode enters through the `Repo Master` orchestration front door unless you explicitly pass `--agent`.
 
-`env.sh` is intended for runtime secrets such as MCP/API keys. The shell shim preserves operational settings such as `PATH`, `XGC_COPILOT_PROFILE_HOME`, `XGC_COPILOT_CONFIG_HOME`, `XGC_COPILOT_RAW_BIN`, `XGC_HOOK_SCRIPT_ROOT`, `XGC_PERMISSION_MODE`, and `XGC_REASONING_EFFORT` around `env.sh` loading so a stale secret file cannot silently redirect the active profile, raw binary, command search path, permission mode, or reasoning-effort override.
+`env.sh` is intended for runtime secrets such as MCP/API keys. The shell shim preserves operational settings such as `PATH`, `XGC_COPILOT_PROFILE_HOME`, `XGC_COPILOT_CONFIG_HOME`, `XGC_COPILOT_RAW_BIN`, `XGC_HOOK_SCRIPT_ROOT`, `XGC_PERMISSION_MODE`, `XGC_REASONING_EFFORT`, and `XGC_REASONING_EFFORT_CAP` around `env.sh` loading so a stale secret file cannot silently redirect the active profile, raw binary, command search path, permission mode, reasoning-effort override, or reasoning-effort cap.
 
 ## Version Tracks And Updates
 
@@ -221,7 +221,7 @@ The default install state uses `autoUpdateMode: check`, so the project is prepar
 
 Shell startup never runs the updater unless `XGC_AUTO_UPDATE_ON_SHELL_START=1` is set. Run `xgc update --check` manually when you want a compatibility check; if an operator later chooses `apply`, only the latest compatible release on the current track is applied.
 
-Opening a new terminal should not print zsh job-completion noise. If you still see a line such as `[4] + done node "$updater" --check --if-due --quiet`, the active shim is stale or manually modified; rerun `npx x-for-github-copilot install --permission-mode <your-current-mode>` to refresh it, or keep shell-start updates disabled by leaving `XGC_AUTO_UPDATE_ON_SHELL_START` unset.
+Opening a new terminal should not print zsh job-completion noise. If you still see a line such as `[4] + done node "$updater" --check --if-due --quiet`, the active shim is stale or manually modified; rerun `npx x-for-github-copilot install --permission-mode <your-current-mode>` to refresh it, or use `npx --yes x-for-github-copilot install --permission-mode <your-current-mode> --reasoning-effort xhigh --reasoning-effort-cap high` from an agent/non-interactive session. You can also keep shell-start updates disabled by leaving `XGC_AUTO_UPDATE_ON_SHELL_START` unset.
 
 ## Permission Mode
 
@@ -241,12 +241,18 @@ Install and configure X for GitHub Copilot by following the instructions here:
 https://raw.githubusercontent.com/Juhwa-Lee1023/x-for-github-copilot/refs/heads/main/docs/install.md
 ```
 
-The guide tells the agent to ask for `ask` / `work` / `yolo`, pass that selection through `--permission-mode`, and verify with `npx x-for-github-copilot doctor` plus a fresh shell. That avoids the hidden installer `read` prompt that can otherwise stall inside Copilot's shell tool.
+The guide tells the agent to ask for `ask` / `work` / `yolo`, pass that selection through `--permission-mode`, run the installer with `npx --yes`, and verify with `npx --yes x-for-github-copilot doctor` plus a fresh shell. That avoids both npm/npx's hidden package-install confirmation prompt and the installer's permission-mode `read` prompt, either of which can otherwise stall inside Copilot's shell tool.
 
 You can still run the installer directly when you already know the mode:
 
 ```bash
 npx x-for-github-copilot install --permission-mode work
+```
+
+For a non-interactive agent or script, include the npm confirmation flag and the intended effort explicitly:
+
+```bash
+npx --yes x-for-github-copilot install --permission-mode work --reasoning-effort xhigh --reasoning-effort-cap high
 ```
 
 You can change the current shell without reinstalling:
@@ -260,13 +266,20 @@ Explicit Copilot CLI permission flags such as `--allow-all`, `--allow-tool`, or 
 
 ## Reasoning Effort
 
-XGC defaults GitHub Copilot CLI reasoning effort to the highest current CLI level:
+XGC stores `xhigh` as the desired default, then applies a separate account/subscription cap:
 
 ```bash
 --reasoning-effort xhigh
+--reasoning-effort-cap high
 ```
 
-That is applied by the shell shim for normal XGC `copilot` / `xgc` runs, including the Repo Master front door and direct XGC lane wrappers. It is not written into custom-agent frontmatter because GitHub custom agent `model:` frontmatter is static and does not carry reasoning effort.
+The shell shim applies the lower of the desired effort, the account/subscription cap, and the selected model's known cap during normal XGC `copilot` / `xgc` runs, including the Repo Master front door and direct XGC lane wrappers. The default cap is `high` because some accounts expose only `high` even for GPT-5-family models. Known high-only models such as Claude, Gemini, and GPT-4.1 also receive `high` so they do not silently fall back to `medium`. Reasoning effort is not written into custom-agent frontmatter because GitHub custom agent `model:` frontmatter is static and does not carry reasoning effort.
+
+Allow `xhigh` for the current shell only after confirming the account supports it:
+
+```bash
+xgc_effort_cap xhigh
+```
 
 Override for one run:
 
@@ -286,7 +299,7 @@ export XGC_REASONING_EFFORT=off
 `yolo` maps to Copilot CLI's `--allow-all`. Use it only for an isolated workspace where you explicitly want unattended execution and understand that Copilot will not ask before running tools.
 
 ```bash
-npx x-for-github-copilot install --permission-mode yolo
+npx --yes x-for-github-copilot install --permission-mode yolo --reasoning-effort xhigh --reasoning-effort-cap high
 xgc_mode yolo
 ```
 
@@ -316,7 +329,7 @@ xgc_mode yolo
 - `copilot_raw` bypasses X for GitHub Copilot and opens raw GitHub Copilot CLI
 - `xgc_mode ...` changes the current shell's permission mode without reinstalling
 
-If you just finished installing from a coding-agent session, the agent should not stop at "install succeeded." It should also tell you to open a fresh shell, run plain `copilot`, and mention `copilot_raw` plus `xgc_mode ask|work|yolo`.
+If you just finished installing from a coding-agent session, the agent should not stop at "install succeeded." It should also tell you to open a fresh shell, run plain `copilot`, and mention `copilot_raw`, `xgc_mode ask|work|yolo`, and `xgc_effort_cap xhigh` only for accounts confirmed to support `xhigh`.
 
 For the current shell only, activate manually:
 
@@ -324,7 +337,7 @@ For the current shell only, activate manually:
 source ~/.config/xgc/xgc-shell.sh
 ```
 
-The shell shim is expected to be sourceable from both bash and zsh, including zsh sessions with `set -u` / `nounset` enabled. It should also find the raw Copilot binary from a plain zsh session without requiring `XGC_COPILOT_RAW_BIN`; the shim uses a zsh-safe path lookup before falling back to bash-style lookup. `npm run materialize:global` records a resolvable raw Copilot binary in `~/.config/xgc/profile.env` for repo-checkout developer installs, and preserves an existing executable raw-binary setting on later materialization runs. If sourcing the shim prints `BASH_SOURCE[0]: parameter not set`, `bad option: -P`, or cannot find the raw binary even though `/opt/homebrew/bin/copilot` exists, the active shim copy is stale; rerun `npx x-for-github-copilot install --permission-mode <your-current-mode>`, then open a fresh shell.
+The shell shim is expected to be sourceable from both bash and zsh, including zsh sessions with `set -u` / `nounset` enabled. It should also find the raw Copilot binary from a plain zsh session without requiring `XGC_COPILOT_RAW_BIN`; the shim uses a zsh-safe path lookup before falling back to bash-style lookup. `npm run materialize:global` records a resolvable raw Copilot binary in `~/.config/xgc/profile.env` for repo-checkout developer installs, and preserves an existing executable raw-binary setting on later materialization runs. If sourcing the shim prints `BASH_SOURCE[0]: parameter not set`, `bad option: -P`, or cannot find the raw binary even though `/opt/homebrew/bin/copilot` exists, the active shim copy is stale; rerun `npx x-for-github-copilot install --permission-mode <your-current-mode>` manually, or `npx --yes x-for-github-copilot install --permission-mode <your-current-mode> --reasoning-effort xhigh --reasoning-effort-cap high` from an agent/non-interactive session, then open a fresh shell.
 
 If you want a preview-only run without writing your shell startup file, omit `--write-shell-profile`:
 
@@ -496,6 +509,7 @@ Those checks now also confirm:
 - the active winner layer and agent-level model policy are easy to inspect, while the X for GitHub Copilot profile intentionally avoids a persistent root `model`
 - fresh bootstrap materialization keeps hooks, agents, skills, MCP, LSP, and finalizer-safe `workspace.yaml` output aligned without live Copilot access
 - the hook finalizer can produce the preferred repo-owned `.xgc/validation/workspace.yaml` operator truth snapshot, while session-state `workspace.yaml` remains compatibility/fallback evidence and reports compare freshness when both copies exist
+- the hook finalizer treats expected no-match `rg`/`grep` verification checks separately from real validation command failures, so a successful absence check does not downgrade the session by itself
 - specialist agents and parent-aware model policy materialize without leaking source-only `modelPolicy`; Repo Master omits static `model:` for root-selected inheritance, while child/specialist lanes expose resolved static `model:` values
 
 ## Confirm Which Profile And Surface Are Active
@@ -536,7 +550,7 @@ That report tells you:
 
 The intended operator path is:
 
-1. install with `npx x-for-github-copilot install`
+1. install with `npx x-for-github-copilot install`, or `npx --yes x-for-github-copilot install --permission-mode <mode> --reasoning-effort xhigh --reasoning-effort-cap high` for agent/non-interactive setup
 2. open a new shell, or activate the shim manually for the current shell
 3. run plain `copilot`
 4. inspect status with `xgc status` or `npx x-for-github-copilot doctor`

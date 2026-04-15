@@ -468,6 +468,7 @@ test("session bundle report synthesizes SESSION_RESULTS and SESSION_MATRIX witho
       'committed_repo_files: ["src/page.tsx"]',
       'key_agents: ["Repo Master", "Patch Master"]',
       "repo_scout_invocation_count: 1",
+      "repo_scout_duplicate_observed: false",
       "triage_invocation_count: 0",
       "patch_master_invocation_count: 2",
       "required_check_invocation_count: 0",
@@ -612,6 +613,7 @@ test("session bundle report synthesizes SESSION_RESULTS and SESSION_MATRIX witho
       committedDiffSource: string | null;
       keyAgents: string[];
       repoScoutInvocationCount: number | null;
+      repoScoutDuplicateObserved: boolean | null;
       patchMasterInvocationCount: number | null;
       executionClaimWithoutObservedRepoDiff: boolean | null;
       postExecutionOwnershipLeakObserved: boolean | null;
@@ -676,6 +678,7 @@ test("session bundle report synthesizes SESSION_RESULTS and SESSION_MATRIX witho
   assert.equal(session1.committedDiffSource, "git-head-range");
   assert.deepEqual(session1.keyAgents, ["Repo Master", "Patch Master"]);
   assert.equal(session1.repoScoutInvocationCount, 1);
+  assert.equal(session1.repoScoutDuplicateObserved, false);
   assert.equal(session1.patchMasterInvocationCount, 2);
   assert.equal(session1.executionClaimWithoutObservedRepoDiff, false);
   assert.equal(session1.postExecutionOwnershipLeakObserved, false);
@@ -1236,6 +1239,7 @@ test("runtime surface report defaults follow the overridden repo root", () => {
       "working_tree_clean: true",
       'key_agents: ["Repo Master", "Patch Master"]',
       "repo_scout_invocation_count: 1",
+      "repo_scout_duplicate_observed: false",
       "triage_invocation_count: 0",
       "patch_master_invocation_count: 2",
       "required_check_invocation_count: 0",

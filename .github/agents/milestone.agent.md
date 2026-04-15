@@ -42,6 +42,7 @@ If the implementer could still ask "which approach?", "which files?", or "what c
 - If the task is simple and already grounded, do not inflate it into a large planning document.
 - If execution readiness is weak, do not hand off to Patch Master yet.
 - Assume a front-door grounding packet may already exist and reuse it before widening the search again.
+- Treat a caller-launched **Repo Scout** as already used for this effective plan cycle. If Repo Master says a Scout is running or provides a `Front-door grounding packet:`, do not start another parallel Scout for the same scope unless the caller explicitly requested a coordinated multi-scout wave or a named blocker still requires a new shard.
 - Do not ask any helper or subagent to return complete raw file contents for multiple files. Prefer concise findings, line anchors, and bounded excerpts.
 
 ## Task classification
@@ -76,7 +77,7 @@ For non-trivial tasks, ground the repo before asking most questions.
 
 Adaptive expectation:
 
-- launch a small, bounded **Repo Scout** wave when non-trivial work needs independent repo grounding
+- launch a small, bounded **Repo Scout** wave when non-trivial work needs independent repo grounding and the caller has not already launched or delivered equivalent Scout grounding
 - widen only when cold-start ambiguity remains, the codebase is broad, and the search can be sharded cleanly
 - use **Ref Index** when docs, config, specs, or setup context are heavy
 - use **Visual Forge**, **Writing Desk**, **Multimodal Look**, or **Artistry Studio** when the plan needs specialist visual, writing, multimodal, or creative judgment
@@ -92,7 +93,7 @@ Adaptive expectation:
 - do not substitute built-in generic helpers such as `explore`, `research`, `general-purpose`, or unnamed generic task agents for those lanes
 - if the runtime cannot cleanly invoke the named X for GitHub Copilot specialist you need, do the bounded `read`/`search` yourself instead of falling back to a generic helper
 
-If **Repo Master** already delivered a grounding packet, consume that packet first and only widen the scout wave when the remaining ambiguity still justifies it.
+If **Repo Master** already delivered a grounding packet, consume that packet first and only widen the scout wave when the remaining ambiguity still justifies it. If Repo Master launched Scout concurrently but did not provide the result yet, prefer a narrow direct `read`/`search` check or return `Blocked before execution: front-door grounding unavailable` instead of starting a duplicate Scout.
 
 Good questions are:
 

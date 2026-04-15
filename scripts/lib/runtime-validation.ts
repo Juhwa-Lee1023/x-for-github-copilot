@@ -206,6 +206,7 @@ export type RouteObservationSummary = {
   observedFrontDoorHandledDirectly: boolean | null;
   observedScoutCount: number;
   repoScoutInvocationCount: number;
+  repoScoutDuplicateObserved: boolean;
   triageInvocationCount: number;
   patchMasterInvocationCount: number;
   requiredCheckInvocationCount: number;
@@ -955,8 +956,9 @@ function isValidationEvidenceLine(line: string) {
   const normalized = line.trim();
   if (
     !normalized ||
+    isBareToolExitLine(normalized) ||
     isFoundationNoiseLine(normalized) ||
-    isPromptOrRequirementLine(normalized) ||
+    (!isStructuredValidationResultLine(normalized) && isPromptOrRequirementLine(normalized)) ||
     (!isValidationCheckmarkResultLine(normalized) && isPlanningOrAdvisoryLine(normalized))
   ) {
     return false;
@@ -965,7 +967,7 @@ function isValidationEvidenceLine(line: string) {
   return (
     /^(?:[$>#]\s*)?(?:npm|npx|pnpm|yarn|bun|vitest|playwright|next|prisma)\b/i.test(normalized) ||
     /\b(validation_exit\s*[:=]\s*\d+|validation_state\s*[:=]\s*done|state=done)\b/i.test(normalized) ||
-    /^(?:Running\s+\d+\s+(?:tests?|workers?)|Test Files?\s+\d+\s+(?:passed|failed)|No ESLint warnings or errors|Compiled successfully|build passed|validation passed|smoke test passed|\d+\s+passed|\d+\s+failed)\b/i.test(
+    /^(?:Running\s+\d+\s+(?:tests?|workers?)|Test Files?\s+\d+\s+(?:passed|failed)|No ESLint warnings or errors|Compiled successfully|build passed|validation passed|validation command passed|validation no-match check passed|smoke test passed|\d+\s+passed|\d+\s+failed)\b/i.test(
       normalized
     ) ||
     /\b(AssertionError|ReferenceError|SyntaxError|TimeoutError|failed to compile|tests?\s+failed|test files?\s+\d+\s+failed|command failed|returned non-zero|exit code\s+[1-9]|npm ERR!|ELIFECYCLE|EADDRINUSE|address already in use|ERR_CONNECTION_REFUSED|connection refused|dev server did not become ready|page\.goto:\s*net::ERR_CONNECTION_REFUSED|playwright web server did not become ready)\b/i.test(
@@ -978,6 +980,14 @@ function isValidationEvidenceLine(line: string) {
       normalized
     )
   );
+}
+
+function isBareToolExitLine(line: string) {
+  return /^<exited with exit code -?\d+>$/i.test(line.trim());
+}
+
+function isStructuredValidationResultLine(line: string) {
+  return /^\s*validation\s+(?:command|no-match check)\s+(?:passed|failed)\b/i.test(line);
 }
 
 function isRuntimeToolingIssueLine(line: string) {
@@ -1702,8 +1712,8 @@ export function summarizeValidationLog(text: string): ValidationLogSummary {
     .filter(
       (line) =>
         line.length > 0 &&
-        (!isPromptOrRequirementLine(line) || isValidationCheckmarkResultLine(line)) &&
-        (!isPlanningOrAdvisoryLine(line) || isValidationCheckmarkResultLine(line))
+        (!isPromptOrRequirementLine(line) || isValidationCheckmarkResultLine(line) || isStructuredValidationResultLine(line)) &&
+        (!isPlanningOrAdvisoryLine(line) || isValidationCheckmarkResultLine(line) || isStructuredValidationResultLine(line))
     );
   const validationObserved = lines.some((line) => isValidationEvidenceLine(line));
   if (!validationObserved) {
@@ -1727,7 +1737,7 @@ export function summarizeValidationLog(text: string): ValidationLogSummary {
     /\b(error|failed|failure|non-zero)\b.*\b(prisma|seed|seeding|typecheck|typescript|eslint|playwright|vitest|next build)\b/i
   ];
   const strongPassPatterns = [
-    /\b(no eslint warnings or errors|npm test passed|tests?\s+\d+\s+passed|test files?\s+\d+\s+passed|compiled successfully|build passed|validation passed|smoke test passed|playwright.*\bpassed|all required validation commands passed)\b/i,
+    /\b(no eslint warnings or errors|npm test passed|tests?\s+\d+\s+passed|test files?\s+\d+\s+passed|compiled successfully|build passed|validation passed|validation command passed|validation no-match check passed|smoke test passed|playwright.*\bpassed|all required validation commands passed)\b/i,
     /^\s*(?:✓\s*)?\d+\s+passed\b/i,
     /^\s*(?:\d+[\.)]\s*)?`?(?:npm install|npx prisma generate|npx prisma db push --force-reset|npm run seed|npm run lint|npm test|npm run build|npx playwright test)`?\s*(?:✅|passed)\s*$/i,
     /^\s*all passed\.?\s*$/i
@@ -1738,20 +1748,22 @@ export function summarizeValidationLog(text: string): ValidationLogSummary {
   ];
   const isValidationSignalNoise = (line: string) =>
     !isValidationCheckmarkResultLine(line) &&
+    !isStructuredValidationResultLine(line) &&
     (isPlanningOrAdvisoryLine(line) ||
       isCodeOrExampleLine(line) ||
       isRetrospectiveValidationFailureNote(line) ||
-    /\bAgent is still running after waiting\b/i.test(line) ||
-    (/\bagent_id:\s*[^,\s]+/i.test(line) && /\bstatus:\s*running\b/i.test(line) && /\btool_calls_completed\b/i.test(line)) ||
-    /\bMCP transport for .* closed\b/i.test(line) ||
-    /\bTransient error connecting to HTTP server .*\bfetch failed\b/i.test(line) ||
-    /\bRetrying connection to HTTP server\b/i.test(line) ||
-    /\bFailed to load memories for prompt:\s*Error:\s*GitHub repository name is required\b/i.test(line) ||
-    /\b(Command failed with exit code 128:\s*)?git rev-parse HEAD\b/i.test(line) ||
-    /\bFailed to get current commit hash\b/i.test(line) ||
-    /\b(Starting|Creating|Connecting) MCP client for\b/i.test(line) ||
-    /\bMCP client for .* connected\b/i.test(line) ||
-    /\bStarted MCP client for remote server\b/i.test(line) ||
+      isBareToolExitLine(line) ||
+      /\bAgent is still running after waiting\b/i.test(line) ||
+      (/\bagent_id:\s*[^,\s]+/i.test(line) && /\bstatus:\s*running\b/i.test(line) && /\btool_calls_completed\b/i.test(line)) ||
+      /\bMCP transport for .* closed\b/i.test(line) ||
+      /\bTransient error connecting to HTTP server .*\bfetch failed\b/i.test(line) ||
+      /\bRetrying connection to HTTP server\b/i.test(line) ||
+      /\bFailed to load memories for prompt:\s*Error:\s*GitHub repository name is required\b/i.test(line) ||
+      /\b(Command failed with exit code 128:\s*)?git rev-parse HEAD\b/i.test(line) ||
+      /\bFailed to get current commit hash\b/i.test(line) ||
+      /\b(Starting|Creating|Connecting) MCP client for\b/i.test(line) ||
+      /\bMCP client for .* connected\b/i.test(line) ||
+      /\bStarted MCP client for remote server\b/i.test(line) ||
       /\bGitHub MCP server configured after authentication\b/i.test(line));
   const failureSignals = lines
     .map((line, index) => ({ line, index }))
@@ -1773,7 +1785,7 @@ export function summarizeValidationLog(text: string): ValidationLogSummary {
   const lastFailureIndex = Math.max(-1, ...failureSignals.map((entry) => entry.index));
   const lastStrongPassIndex = Math.max(-1, ...strongPassSignals.map((entry) => entry.index));
   const hardFailureObserved = failureSignals.some((entry) =>
-    /\b(\d+\s+failed\b|strict mode violation|locator resolved to|AssertionError)\b/i.test(entry.line)
+    /\b(\d+\s+failed\b|strict mode violation|locator resolved to|AssertionError|validation command failed)\b/i.test(entry.line)
   );
   const hardRecoveryObserved = strongPassSignals.some(
     (entry) =>
@@ -1951,6 +1963,7 @@ export function summarizeRouteObservations(args: {
     observedFailureCount: githubProbeObservation.pr404Count
   });
   const observedScoutCount = invocationSummary.invocationCounts["Repo Scout"] ?? args.observedSubagentCounts["Repo Scout"] ?? 0;
+  const repoScoutDuplicateObserved = observedScoutCount > 1;
   const observedRefIndex = observedPlanningChain.includes("Ref Index");
   const postExecutionPlannerReopenAgents =
     patchIndex >= 0
@@ -2103,6 +2116,7 @@ export function summarizeRouteObservations(args: {
         : null,
     observedScoutCount,
     repoScoutInvocationCount: invocationSummary.invocationCounts["Repo Scout"] ?? 0,
+    repoScoutDuplicateObserved,
     triageInvocationCount: triageDuplicateSummary.triageInvocationCount,
     patchMasterInvocationCount: invocationSummary.invocationCounts["Patch Master"] ?? 0,
     requiredCheckInvocationCount: invocationSummary.invocationCounts["Required Check"] ?? 0,

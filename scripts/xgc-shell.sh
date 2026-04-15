@@ -86,6 +86,13 @@ else
   XGC__INITIAL_REASONING_EFFORT=""
 fi
 
+if [[ ${XGC_REASONING_EFFORT_CAP+x} ]]; then
+  XGC__INITIAL_REASONING_EFFORT_CAP_SET=1
+  XGC__INITIAL_REASONING_EFFORT_CAP="$XGC_REASONING_EFFORT_CAP"
+else
+  XGC__INITIAL_REASONING_EFFORT_CAP=""
+fi
+
 if [[ ${COPILOT_HOME+x} ]]; then
   XGC__INITIAL_COPILOT_HOME_SET=1
   XGC__INITIAL_COPILOT_HOME="$COPILOT_HOME"
@@ -143,6 +150,10 @@ if [[ "${XGC__INITIAL_REASONING_EFFORT_SET:-0}" -eq 1 ]]; then
   XGC_REASONING_EFFORT="$XGC__INITIAL_REASONING_EFFORT"
 fi
 
+if [[ "${XGC__INITIAL_REASONING_EFFORT_CAP_SET:-0}" -eq 1 ]]; then
+  XGC_REASONING_EFFORT_CAP="$XGC__INITIAL_REASONING_EFFORT_CAP"
+fi
+
 if [[ "${XGC__INITIAL_COPILOT_HOME_SET:-0}" -eq 1 ]]; then
   COPILOT_HOME="$XGC__INITIAL_COPILOT_HOME"
   export COPILOT_HOME
@@ -157,6 +168,7 @@ export XGC_HOOK_SCRIPT_ROOT
 export XGC_PERMISSION_MODE="${XGC_PERMISSION_MODE:-ask}"
 export XGC_AUTO_UPDATE_MODE="${XGC_AUTO_UPDATE_MODE:-check}"
 export XGC_REASONING_EFFORT="${XGC_REASONING_EFFORT:-xhigh}"
+export XGC_REASONING_EFFORT_CAP="${XGC_REASONING_EFFORT_CAP:-high}"
 export XGC_RUNTIME_HOME="${XGC_RUNTIME_HOME:-$HOME/.local/share/xgc/current}"
 
 xgc__resolve_raw_copilot_bin() {
@@ -228,6 +240,7 @@ xgc__load_env() {
   local keep_permission_mode="${XGC_PERMISSION_MODE:-}"
   local keep_auto_update_mode="${XGC_AUTO_UPDATE_MODE:-}"
   local keep_reasoning_effort="${XGC_REASONING_EFFORT:-}"
+  local keep_reasoning_effort_cap="${XGC_REASONING_EFFORT_CAP:-}"
   local keep_path="${PATH:-}"
   local keep_copilot_home_set=0
   local keep_copilot_home=""
@@ -247,6 +260,7 @@ xgc__load_env() {
   XGC_PERMISSION_MODE="$keep_permission_mode"
   XGC_AUTO_UPDATE_MODE="$keep_auto_update_mode"
   XGC_REASONING_EFFORT="$keep_reasoning_effort"
+  XGC_REASONING_EFFORT_CAP="$keep_reasoning_effort_cap"
   PATH="$keep_path"
   if [[ $keep_copilot_home_set -eq 1 ]]; then
     COPILOT_HOME="$keep_copilot_home"
@@ -262,6 +276,7 @@ xgc__load_env() {
   export XGC_PERMISSION_MODE
   export XGC_AUTO_UPDATE_MODE
   export XGC_REASONING_EFFORT
+  export XGC_REASONING_EFFORT_CAP
   export PATH
 }
 
@@ -394,18 +409,153 @@ xgc__has_explicit_reasoning_effort_override() {
   return 1
 }
 
-xgc__reasoning_effort_flag() {
-  case "${XGC_REASONING_EFFORT:-xhigh}" in
+xgc__clean_frontmatter_value() {
+  local value="$1"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  value="${value%\"}"
+  value="${value#\"}"
+  value="${value%\'}"
+  value="${value#\'}"
+  printf '%s\n' "$value"
+}
+
+xgc__agent_model() {
+  local agent_id="$1"
+  local agent_file=""
+  local model=""
+  for agent_file in \
+    "$XGC_COPILOT_PROFILE_HOME/agents/$agent_id.agent.md" \
+    "${PWD:-.}/.github/agents/$agent_id.agent.md" \
+    "$XGC_RUNTIME_HOME/agents/$agent_id.agent.md"
+  do
+    [[ -f "$agent_file" ]] || continue
+    model="$(sed -n 's/^[[:space:]]*model:[[:space:]]*//p' "$agent_file" 2>/dev/null | head -n 1 || true)"
+    if [[ -n "$model" ]]; then
+      xgc__clean_frontmatter_value "$model"
+      return 0
+    fi
+  done
+  return 1
+}
+
+xgc__profile_config_model() {
+  local config_path="$XGC_COPILOT_PROFILE_HOME/config.json"
+  local model=""
+  [[ -f "$config_path" ]] || return 1
+  model="$(sed -n 's/^[[:space:]]*"model"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$config_path" 2>/dev/null | head -n 1 || true)"
+  [[ -n "$model" ]] || return 1
+  printf '%s\n' "$model"
+}
+
+xgc__selected_model_for_reasoning() {
+  local selected_agent="$1"
+  shift
+  local model=""
+  model="$(xgc__extract_flag_value "--model" "$@" 2>/dev/null || true)"
+  if [[ -n "$model" ]]; then
+    printf '%s\n' "$model"
+    return 0
+  fi
+  model="$(xgc__agent_model "$selected_agent" 2>/dev/null || true)"
+  if [[ -n "$model" ]]; then
+    printf '%s\n' "$model"
+    return 0
+  fi
+  xgc__profile_config_model
+}
+
+xgc__model_supports_xhigh_reasoning() {
+  local model
+  model="$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')"
+  case "$model" in
+    gpt-5|gpt-5.*|gpt-5-*|openai/gpt-5*)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+xgc__reasoning_effort_rank() {
+  case "${1:-}" in
+    low) printf '%s\n' 0 ;;
+    medium) printf '%s\n' 1 ;;
+    high) printf '%s\n' 2 ;;
+    xhigh) printf '%s\n' 3 ;;
+    *) return 1 ;;
+  esac
+}
+
+xgc__lower_reasoning_effort() {
+  local left="${1:-}"
+  local right="${2:-}"
+  local left_rank=""
+  local right_rank=""
+  left_rank="$(xgc__reasoning_effort_rank "$left" 2>/dev/null || true)"
+  right_rank="$(xgc__reasoning_effort_rank "$right" 2>/dev/null || true)"
+  [[ -n "$left_rank" && -n "$right_rank" ]] || return 1
+  if [[ "$left_rank" -le "$right_rank" ]]; then
+    printf '%s\n' "$left"
+  else
+    printf '%s\n' "$right"
+  fi
+}
+
+xgc__reasoning_effort_cap() {
+  case "${XGC_REASONING_EFFORT_CAP:-high}" in
     low|medium|high|xhigh)
-      printf '%s\n' "--reasoning-effort=${XGC_REASONING_EFFORT}"
+      printf '%s\n' "${XGC_REASONING_EFFORT_CAP:-high}"
+      ;;
+    *)
+      echo "[X for GitHub Copilot] Unknown XGC_REASONING_EFFORT_CAP=${XGC_REASONING_EFFORT_CAP}; falling back to high." >&2
+      printf '%s\n' "high"
+      ;;
+  esac
+}
+
+xgc__model_reasoning_effort_cap() {
+  local model="${1:-}"
+  if [[ -n "$model" ]] && ! xgc__model_supports_xhigh_reasoning "$model"; then
+    printf '%s\n' "high"
+  else
+    printf '%s\n' "xhigh"
+  fi
+}
+
+xgc__effective_reasoning_effort() {
+  local desired="${XGC_REASONING_EFFORT:-xhigh}"
+  local model="${1:-}"
+  local account_cap=""
+  local model_cap=""
+  local capped_effort=""
+  account_cap="$(xgc__reasoning_effort_cap)"
+  model_cap="$(xgc__model_reasoning_effort_cap "$model")"
+  case "$desired" in
+    low|medium|high)
+      capped_effort="$(xgc__lower_reasoning_effort "$desired" "$account_cap")"
+      xgc__lower_reasoning_effort "$capped_effort" "$model_cap"
+      ;;
+    xhigh)
+      capped_effort="$(xgc__lower_reasoning_effort "xhigh" "$account_cap")"
+      xgc__lower_reasoning_effort "$capped_effort" "$model_cap"
       ;;
     off|none|disable|disabled|"")
       ;;
     *)
-      echo "[X for GitHub Copilot] Unknown XGC_REASONING_EFFORT=${XGC_REASONING_EFFORT}; falling back to xhigh." >&2
-      printf '%s\n' "--reasoning-effort=xhigh"
+      echo "[X for GitHub Copilot] Unknown XGC_REASONING_EFFORT=${XGC_REASONING_EFFORT}; falling back to the configured highest effort." >&2
+      capped_effort="$(xgc__lower_reasoning_effort "xhigh" "$account_cap")"
+      xgc__lower_reasoning_effort "$capped_effort" "$model_cap"
       ;;
   esac
+}
+
+xgc__reasoning_effort_flag() {
+  local model="${1:-}"
+  local effort=""
+  effort="$(xgc__effective_reasoning_effort "$model" || true)"
+  [[ -n "$effort" ]] && printf '%s\n' "--reasoning-effort=${effort}"
 }
 
 xgc__permission_flags() {
@@ -910,7 +1060,9 @@ xgc__invoke() {
 
   if [[ $inject_reasoning_effort -eq 1 ]]; then
     local reasoning_effort_flag=""
-    reasoning_effort_flag="$(xgc__reasoning_effort_flag || true)"
+    local reasoning_model=""
+    reasoning_model="$(xgc__selected_model_for_reasoning "$selected_agent" "${rewritten_args[@]}" 2>/dev/null || true)"
+    reasoning_effort_flag="$(xgc__reasoning_effort_flag "$reasoning_model" || true)"
     [[ -n "$reasoning_effort_flag" ]] && cmd+=("$reasoning_effort_flag")
   fi
 
@@ -1026,7 +1178,7 @@ xgc_preflight() {
   echo "X for GitHub Copilot live preflight passed for profile: $XGC_COPILOT_PROFILE_HOME"
 }
 
-unalias copilot xgc xgc_scout xgc_plan xgc_triage xgc_patch xgc_review xgc_check xgc_mode xgc_update copilot_raw 2>/dev/null || true
+unalias copilot xgc xgc_scout xgc_plan xgc_triage xgc_patch xgc_review xgc_check xgc_mode xgc_effort_cap xgc_update copilot_raw 2>/dev/null || true
 
 copilot() {
   xgc__invoke "repo-master" "$@"
@@ -1075,6 +1227,22 @@ xgc_mode() {
       ;;
     *)
       echo "usage: xgc_mode {ask|work|yolo}" >&2
+      return 2
+      ;;
+  esac
+}
+
+xgc_effort_cap() {
+  case "${1:-}" in
+    low|medium|high|xhigh)
+      export XGC_REASONING_EFFORT_CAP="$1"
+      echo "X for GitHub Copilot reasoning effort cap: $XGC_REASONING_EFFORT_CAP"
+      ;;
+    "")
+      echo "X for GitHub Copilot reasoning effort cap: ${XGC_REASONING_EFFORT_CAP:-high}"
+      ;;
+    *)
+      echo "usage: xgc_effort_cap {low|medium|high|xhigh}" >&2
       return 2
       ;;
   esac

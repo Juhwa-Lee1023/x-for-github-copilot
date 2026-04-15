@@ -202,6 +202,18 @@ The route/reporting layer now makes that easier to prove with:
 
 If the same plan is triaged twice without new facts, tighten Repo Master's reuse-completed-review behavior.
 
+## Why did Repo Scout run twice?
+
+This is not automatically a failed run, but it can be wasted grounding.
+
+Expected behavior:
+
+- Repo Master either lets Milestone own the grounding pass
+- or Repo Master finishes a bounded Scout wave and passes a compact `Front-door grounding packet:` into Milestone
+- Milestone consumes that packet before widening discovery
+
+If `repoScoutDuplicateObserved` is true and the user did not ask for a multi-scout wave, inspect whether Repo Master and Milestone both launched Scout for the same scope. Tighten the handoff so a caller-launched Scout counts as used for the current effective plan cycle.
+
 ## Why did it keep working after Patch Master completed?
 
 That usually means the root lane reopened broad validation instead of closing from Patch Master's completion summary.
@@ -257,6 +269,20 @@ If `agent_model_policy_mismatch_observed` is true, the generated/materialized po
 
 If `interactiveCommandHangObserved` is true, inspect `interactiveCommandHangCommands` for pagers/editors (`view`, `vim`, `less`, `more`, `nano`), scaffold commands that can prompt, or `posix_spawn failed`. For `npx`/`npm exec` scaffold commands, use `npx --yes create-next-app@14 ...`-style confirmation before the package name; `npx create-next-app@14 ... --yes` may still wait on npm's install prompt in a hidden TTY. Patch Master should switch to non-interactive reads/scaffolds or report a tooling blocker instead of waiting silently. If `missingBuiltInAgentObserved` is true, do not retry Copilot built-in `task`/generic helper lanes; use named X for GitHub Copilot lanes or bounded local checks.
 
+## `npx` is waiting at `Ok to proceed? (y)` during agent install
+
+If an agent appears frozen after running `npx x-for-github-copilot install ...`, inspect the shell output before blaming XGC install speed. `npx` may be waiting for npm's package-install confirmation in a hidden TTY.
+
+Use this form for agent-driven or scripted installs:
+
+```bash
+npx --yes x-for-github-copilot install --permission-mode <ask|work|yolo> --reasoning-effort xhigh --reasoning-effort-cap high
+```
+
+Keep `--yes` before `x-for-github-copilot`. It only answers npm/npx's package-install confirmation; it does not choose the XGC permission mode. Keep `--permission-mode <ask|work|yolo>` in the command so the installer does not ask its own interactive permission question.
+
+Keep `--reasoning-effort-cap high` unless the user explicitly confirms their Copilot account supports `xhigh`; some accounts expose only `high` even for GPT-5-family model names.
+
 ## Fresh workspace raw/default hook failures
 
 If fresh standalone workspaces show repeated hook execution failures, first confirm whether the run used X for GitHub Copilot profile routing or raw/default Copilot profile routing.
@@ -300,7 +326,7 @@ Treat this as bootstrap/runtime context, not app failure. For local implementati
 
 ## `env.sh` changed my X for GitHub Copilot profile, raw binary, or permission mode
 
-`~/.config/xgc/env.sh` should carry secrets and API keys, not shell-control settings. Current shim behavior preserves `PATH`, `XGC_COPILOT_PROFILE_HOME`, `XGC_COPILOT_CONFIG_HOME`, `XGC_COPILOT_RAW_BIN`, `XGC_HOOK_SCRIPT_ROOT`, `XGC_PERMISSION_MODE`, and `XGC_REASONING_EFFORT` while loading `env.sh`, so a stale secret file should not override the active profile, raw binary, command search path, permission mode, or reasoning-effort override. `profile.env` may persist raw binary, hook root, permission defaults, and reasoning-effort defaults, but it must not redirect the dedicated profile/config homes away from `~/.copilot-xgc` and `~/.config/xgc`. Use `xgc_mode ask|work|yolo`, `XGC_REASONING_EFFORT=off`, or one-shot Copilot CLI flags for a single shell/session.
+`~/.config/xgc/env.sh` should carry secrets and API keys, not shell-control settings. Current shim behavior preserves `PATH`, `XGC_COPILOT_PROFILE_HOME`, `XGC_COPILOT_CONFIG_HOME`, `XGC_COPILOT_RAW_BIN`, `XGC_HOOK_SCRIPT_ROOT`, `XGC_PERMISSION_MODE`, `XGC_REASONING_EFFORT`, and `XGC_REASONING_EFFORT_CAP` while loading `env.sh`, so a stale secret file cannot override the active profile, raw binary, command search path, permission mode, reasoning-effort override, or reasoning-effort cap. `profile.env` may persist raw binary, hook root, permission defaults, reasoning-effort defaults, and the reasoning-effort cap, but it must not redirect the dedicated profile/config homes away from `~/.copilot-xgc` and `~/.config/xgc`. Use `xgc_mode ask|work|yolo`, `xgc_effort_cap high|xhigh`, `XGC_REASONING_EFFORT=off`, or one-shot Copilot CLI flags for a single shell/session.
 
 ## Why does validation complain that root patched after Patch Master?
 
@@ -589,6 +615,8 @@ Planned validation checklists are not validation evidence. If a prompt or handof
 If the raw log shows early failures followed by strong later success evidence such as passing tests, build, Playwright, or smoke checks, the finalizer may classify validation as passed and clear the overclaim flag. Wrapper-only success lines are intentionally weaker and do not hide later raw failures.
 
 If `validation_recovered_after_failures_observed` is true, read `validation_recovery_source` and `validation_recovered_command_failures` together. That means earlier raw failures were preserved for audit, but later repo-owned validation artifacts such as `.xgc/validation/**/RESULTS.env` or log exit codes proved the final checked state.
+
+Expected no-match `rg`/`grep` checks are different from failed validation commands. When the finalizer can see the originating command context and the search was a deliberate absence check, exit code 1 is treated as pass evidence for that check instead of a validation failure.
 
 If `model_identity_mismatch_observed` is true during an actual TUI model-switch test, compare `requested_runtime_model` with `post_prompt_observed_runtime_models`. The requested model should be the last TUI-selected model before the prompt; child-agent policy models may still appear after the prompt and should be interpreted alongside `agent_model_policy_mismatch_observed`.
 

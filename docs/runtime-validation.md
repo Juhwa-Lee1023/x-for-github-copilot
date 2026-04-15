@@ -53,6 +53,7 @@ Per runtime case, the report records route-level fields such as:
 - `routeSummarySource`
 - `observedScoutCount`
 - `repoScoutInvocationCount`
+- `repoScoutDuplicateObserved`
 - `triageInvocationCount`
 - `patchMasterInvocationCount`
 - `requiredCheckInvocationCount`
@@ -129,6 +130,7 @@ Interpret them conservatively:
 - `missingBuiltInAgentObserved` and `missingBuiltInAgentNames` capture Copilot runtime attempts to load unavailable built-in agents such as `task`
 - `observedMemoryProbeSuppressed` and `observedPrProbeSuppressed` reflect the GitHub probe policy that was active when the case started; fresh failures discovered during the same run are still reported as fresh checks rather than retroactively relabeled as pre-run suppression
 - `postExecutionRootWriteObserved: true` means root-level write ownership leaked back after `Patch Master` completed; that is treated as a routing regression, not normal finalization
+- `repoScoutDuplicateObserved: true` means the same run invoked `Repo Scout` more than once; this is an operator warning for repeated grounding, not a failure by itself, because explicit scout waves can be valid
 - `triageDuplicateObserved: true` means the same run invoked `Triage` more than once; if `executionReadyHandoffSeenBeforeSecondTriage: true` and `triageDuplicateAllowedReason` is empty, treat that as an unexplained duplicate review pass
 - `routeSummarySource` means route reconstruction preferred `subagent.started` and only fell back to `selected`/`completed` when the stronger event was missing
 
@@ -412,8 +414,9 @@ Session summaries are refreshed from hook-time evidence. They now aim to keep:
 - `session_outcome`, `session_outcome_detail`, `validation_status`, `working_tree_clean`, `repo_changes_committed`, and `repo_changes_uncommitted` as first-class operator signals
 - `validation_overclaim_observed` and `validation_command_failures` when wrapper status says success but raw validation output still contains build, seed, typecheck, Playwright, or connection failures
 - `validation_recovered_after_failures_observed`, `validation_recovery_source`, and `validation_recovered_command_failures` when repo-owned validation artifacts prove a later clean validation run after raw intermediate failures
+- expected no-match `rg`/`grep` checks tracked as validation pass evidence only when the originating command context shows they are deliberate absence checks
 - post-execution root write/patch regressions visible
-- duplicate-`Triage` and GitHub capability cache reuse visible
+- duplicate-`Repo Scout`, duplicate-`Triage`, and GitHub capability cache reuse visible
 - repeated foundation failure and recovery-suggested signals visible
 - bootstrap/tooling failure classes separate from app foundation failure classes, including `bootstrap-hook-path`, `runtime-config-mismatch`, `tooling-materialization`, `legacy-plugin-conflict`, `hook-execution`, and `runtime-transport`
 - validation startability signals such as port conflicts and server-readiness failures visible
