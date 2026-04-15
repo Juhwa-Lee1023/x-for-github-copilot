@@ -13,6 +13,7 @@ BUILT_IN_GENERIC_AGENTS = {"Explore Agent", "General Purpose Agent", "explore", 
 POST_EXECUTION_PLANNER_REOPEN_AGENTS = {"Repo Scout", "Ref Index", "Milestone", "Triage"}
 TERMINAL_FINALIZATION_EVENTS = {"agentStop", "subagentStop"}
 TERMINAL_STOP_REASONS = {"end_turn"}
+SESSION_SHUTDOWN_RECOVERY_EVENT = "sessionShutdownRecovery"
 INTEGRATION_OWNED_SURFACE_PATTERNS = [
     re.compile(r"(^|/)(prisma/schema\.prisma|schema\.(prisma|sql))$", re.IGNORECASE),
     re.compile(r"(^|/)(migrations|db|database)/", re.IGNORECASE),
@@ -56,6 +57,10 @@ FIELD_ORDER = [
     "write_tool_count",
     "bash_tool_count",
     "session_shutdown_observed",
+    "session_shutdown_type",
+    "routine_shutdown_during_open_turn_observed",
+    "session_shutdown_recovery_finalized",
+    "terminal_stop_hook_observed",
     "session_shutdown_code_changes_observed",
     "session_shutdown_files_modified",
     "session_shutdown_lines_added",
@@ -1485,6 +1490,10 @@ def is_session_terminal_finalization_event(event_name, stop_reason=None, events=
     return False
 
 
+def terminal_stop_hook_observed(events):
+    return terminal_hook_seen(events, "agentStop") or terminal_hook_seen(events, "subagentStop")
+
+
 def read_events_with_terminal_settle(transcript_path, event_name, stop_reason=None):
     events = read_events(transcript_path)
     if (
@@ -1571,14 +1580,23 @@ def summarize_direct_tool_execution(events):
     write_tool_count = 0
     bash_tool_count = 0
     session_shutdown_observed = False
+    session_shutdown_type = None
+    routine_shutdown_during_open_turn_observed = False
     session_shutdown_code_changes_observed = False
     session_shutdown_lines_added = None
     session_shutdown_lines_removed = None
     session_shutdown_files_modified = []
+    assistant_turn_open = False
 
     for entry in events:
         event_type = entry.get("type")
         data = entry.get("data") if isinstance(entry.get("data"), dict) else {}
+        if event_type == "assistant.turn_start":
+            assistant_turn_open = True
+            continue
+        if event_type == "assistant.turn_end":
+            assistant_turn_open = False
+            continue
         if event_type == "tool.execution_start":
             tool_execution_count += 1
             tool_name = data.get("toolName")
@@ -1590,6 +1608,11 @@ def summarize_direct_tool_execution(events):
 
         if event_type == "session.shutdown":
             session_shutdown_observed = True
+            shutdown_type = data.get("shutdownType")
+            if isinstance(shutdown_type, str) and shutdown_type:
+                session_shutdown_type = shutdown_type
+            if assistant_turn_open and str(session_shutdown_type or "").lower() == "routine":
+                routine_shutdown_during_open_turn_observed = True
             code_changes = data.get("codeChanges") if isinstance(data.get("codeChanges"), dict) else None
             if code_changes:
                 session_shutdown_code_changes_observed = True
@@ -1611,6 +1634,8 @@ def summarize_direct_tool_execution(events):
         "write_tool_count": write_tool_count,
         "bash_tool_count": bash_tool_count,
         "session_shutdown_observed": session_shutdown_observed,
+        "session_shutdown_type": session_shutdown_type,
+        "routine_shutdown_during_open_turn_observed": routine_shutdown_during_open_turn_observed,
         "session_shutdown_code_changes_observed": session_shutdown_code_changes_observed,
         "session_shutdown_files_modified": session_shutdown_files_modified,
         "session_shutdown_lines_added": session_shutdown_lines_added,
@@ -2959,6 +2984,7 @@ def summarize_session_outcome(
     large_product_build_task_observed=False,
     patch_master_invocation_count=0,
     planner_result_read_proxy_observed=False,
+    specialist_fanout_status=None,
 ):
     if preflight_blocker_observed:
         detail = f"blocked_before_generation_{preflight_blocker_kind or 'preflight'}"
@@ -2998,6 +3024,8 @@ def summarize_session_outcome(
         return "incomplete", "large_product_execution_not_started"
     if background_agent_unresolved_observed and not repo_code_changed:
         return "incomplete", "background_agent_unresolved_without_repo_changes"
+    if specialist_fanout_status == "missing_required" and (repo_code_changed or useful_artifacts_observed):
+        return "partial-success", "missing_required_specialist_lane_with_repo_changes"
 
     if summary_finalization_status in {"partial", "heuristic"}:
         if repo_code_changed:
@@ -3031,6 +3059,10 @@ def summarize_session_outcome(
             return "incomplete", "planner_result_read_proxy_without_execution"
         if execution_handoff_without_observed_repo_diff and not repo_code_changed:
             return "incomplete", "execution_handoff_without_repo_changes"
+        if specialist_fanout_status == "missing_required":
+            if repo_code_changed or useful_artifacts_observed:
+                return "partial-success", "missing_required_specialist_lane_with_repo_changes"
+            return "incomplete", "missing_required_specialist_lane"
         if agent_model_policy_mismatch_observed:
             return "partial-success", "completed_with_model_policy_mismatch"
         if validation_status == "failed":
@@ -3088,8 +3120,12 @@ def summarize_summary_authority(
     if user_abort_observed:
         return "partial", ["user abort was observed before session shutdown"]
 
+    if event_name == SESSION_SHUTDOWN_RECOVERY_EVENT:
+        reasons.append("session.shutdown recovery finalized the run after Copilot exited without a terminal stop hook")
     if event_name not in TERMINAL_FINALIZATION_EVENTS:
         reasons.append("terminal stop hook was not observed")
+    if route_summary.get("routine_shutdown_during_open_turn_observed"):
+        reasons.append("routine session.shutdown occurred while an assistant turn was still open")
     if not events:
         reasons.append("raw events were unavailable")
     if route_summary.get("route_summary_source") == "raw_tool_events_fallback":
@@ -3441,6 +3477,9 @@ def main():
         stop_reason,
     )
     terminal_finalization_event = is_session_terminal_finalization_event(event_name, stop_reason, events)
+    shutdown_recovery_event = event_name == SESSION_SHUTDOWN_RECOVERY_EVENT
+    shutdown_observed = event_type_seen(events, "session.shutdown")
+    terminal_stop_hook_seen = terminal_stop_hook_observed(events)
     latest_event_dt = latest_event_timestamp(events)
     latest_known_dt = max([dt for dt in [latest_event_dt, payload_timestamp_dt] if dt is not None], default=None)
     previous_route_summary = data.get("route_summary") if isinstance(data.get("route_summary"), str) else None
@@ -3612,6 +3651,14 @@ def main():
         if stop_reason:
             data["stop_reason"] = stop_reason
         data["summary_finalization_status"] = "finalized" if stop_reason == "end_turn" else "stopped"
+    elif shutdown_recovery_event and shutdown_observed:
+        data["final_status"] = "stopped"
+        shutdown_type = route_summary.get("session_shutdown_type")
+        if stop_reason and stop_reason != "end_turn":
+            data["stop_reason"] = stop_reason
+        else:
+            data["stop_reason"] = f"session_shutdown_{shutdown_type}" if isinstance(shutdown_type, str) and shutdown_type else "session_shutdown"
+        data["summary_finalization_status"] = "stopped"
     elif event_name == "errorOccurred":
         data["final_status"] = "error"
         data["summary_finalization_status"] = "error"
@@ -3626,6 +3673,8 @@ def main():
     data["finalization_error"] = data.get("summary_finalization_status") == "error"
 
     data.update(route_summary)
+    data["terminal_stop_hook_observed"] = terminal_stop_hook_seen
+    data["session_shutdown_recovery_finalized"] = bool(shutdown_recovery_event and shutdown_observed)
     data["route_summary_available"] = bool(route_summary.get("route_summary"))
     data["route_summary_derived_from_raw_events"] = bool(
         events
@@ -3702,9 +3751,20 @@ def main():
             )
         )
     )
+    routine_shutdown_completion_gap = bool(
+        data.get("final_status") == "completed"
+        and data.get("routine_shutdown_during_open_turn_observed")
+        and not repo_code_files
+    )
     if non_terminal_completion_gap:
         data["final_status"] = "in_progress"
         data["summary_finalization_status"] = "partial"
+        data["finalization_complete"] = False
+        data["finalization_partial"] = True
+        data["finalization_error"] = False
+    elif routine_shutdown_completion_gap:
+        data["final_status"] = "stopped"
+        data["summary_finalization_status"] = "stopped"
         data["finalization_complete"] = False
         data["finalization_partial"] = True
         data["finalization_error"] = False
@@ -3749,7 +3809,12 @@ def main():
     useful_validation_artifact_files = [
         file_path
         for file_path in validation_artifact_files
-        if file_path not in {".xgc/validation/workspace.yaml", "workspace.yaml"}
+        if file_path not in {
+            ".xgc/validation/events.jsonl",
+            ".xgc/validation/workspace.yaml",
+            "events.jsonl",
+            "workspace.yaml",
+        }
     ]
     data["useful_artifacts_observed"] = bool(data["repo_code_changed"] or useful_validation_artifact_files or useful_session_state_files)
     if not data.get("summary") and data["repo_code_changed"]:
@@ -3776,11 +3841,12 @@ def main():
         data.get("large_product_build_task_observed"),
         data.get("patch_master_invocation_count", 0),
         data.get("planner_result_read_proxy_observed"),
+        data.get("specialist_fanout_status"),
     )
     data["session_outcome"] = session_outcome
     data["session_outcome_detail"] = session_outcome_detail
     summary_authority, summary_authority_reasons = summarize_summary_authority(
-        event_name if terminal_finalization_event else "",
+        event_name if (terminal_finalization_event or shutdown_recovery_event) else "",
         data.get("summary_finalization_status"),
         events,
         route_summary,

@@ -57,7 +57,7 @@ Then ask exactly one permission-mode question:
 Which default XGC permission mode should I persist: ask, work, or yolo?
 ```
 
-Use the answer as `<mode>` below.
+Use the answer as `<mode>` below. XGC defaults Copilot CLI reasoning effort to `xhigh` after install; do not ask a second question unless the user explicitly wants a lower effort.
 
 Mode meanings:
 
@@ -68,13 +68,13 @@ Mode meanings:
 ### Step 1: Run the installer
 
 ```bash
-npx x-for-github-copilot install --permission-mode <ask|work|yolo>
+npx x-for-github-copilot install --permission-mode <ask|work|yolo> --reasoning-effort xhigh
 ```
 
 Bun equivalent if the user specifically prefers Bun:
 
 ```bash
-bunx x-for-github-copilot install --permission-mode <ask|work|yolo>
+bunx x-for-github-copilot install --permission-mode <ask|work|yolo> --reasoning-effort xhigh
 ```
 
 Do not clone the repo for normal user installation. The package installer uses the packaged runtime bundle.
@@ -108,6 +108,7 @@ Tell the user:
 - open a new terminal, then run plain `copilot`
 - no slash command or direct subagent invocation is required for normal use
 - use `/model` inside Copilot CLI when they want to switch the root model
+- XGC injects `--reasoning-effort xhigh` by default; pass `--effort` / `--reasoning-effort`, or set `XGC_REASONING_EFFORT=off`, only when they intentionally want a different behavior
 - use `copilot_raw` to bypass XGC
 - use `xgc_mode ask|work|yolo` to change the current shell's permission mode
 
@@ -126,6 +127,7 @@ The package-based install flow:
 - installs the plugin from the packaged runtime bundle
 - appends the shell activation block by default
 - asks which permission mode to persist unless you pass `--permission-mode`
+- persists `XGC_REASONING_EFFORT=xhigh` unless you pass `--reasoning-effort <low|medium|high|xhigh|off>`
 - leaves plain `copilot` as the practical front door after a fresh shell reload
 
 Validation after package install:
@@ -192,7 +194,7 @@ This is a practical GitHub Copilot CLI front door for this project, not a built-
 
 Plain `copilot` in X for GitHub Copilot mode enters through the `Repo Master` orchestration front door unless you explicitly pass `--agent`.
 
-`env.sh` is intended for runtime secrets such as MCP/API keys. The shell shim preserves operational settings such as `PATH`, `XGC_COPILOT_PROFILE_HOME`, `XGC_COPILOT_CONFIG_HOME`, `XGC_COPILOT_RAW_BIN`, `XGC_HOOK_SCRIPT_ROOT`, and `XGC_PERMISSION_MODE` around `env.sh` loading so a stale secret file cannot silently redirect the active profile, raw binary, command search path, or permission mode.
+`env.sh` is intended for runtime secrets such as MCP/API keys. The shell shim preserves operational settings such as `PATH`, `XGC_COPILOT_PROFILE_HOME`, `XGC_COPILOT_CONFIG_HOME`, `XGC_COPILOT_RAW_BIN`, `XGC_HOOK_SCRIPT_ROOT`, `XGC_PERMISSION_MODE`, and `XGC_REASONING_EFFORT` around `env.sh` loading so a stale secret file cannot silently redirect the active profile, raw binary, command search path, permission mode, or reasoning-effort override.
 
 ## Version Tracks And Updates
 
@@ -217,9 +219,9 @@ xgc update
 
 The default install state uses `autoUpdateMode: check`, so the project is prepared for safe compatibility checks first rather than unattended upgrades.
 
-When the shell shim is loaded in an interactive shell, that default `check` mode performs at most one quiet compatibility check per day. If an operator later chooses `apply`, only the latest compatible release on the current track is applied automatically.
+Shell startup never runs the updater unless `XGC_AUTO_UPDATE_ON_SHELL_START=1` is set. Run `xgc update --check` manually when you want a compatibility check; if an operator later chooses `apply`, only the latest compatible release on the current track is applied.
 
-Current shell shim copies detach that background check cleanly, so opening a new terminal should not print zsh job-completion noise. If you still see a line such as `[4] + done node "$updater" --check --if-due --quiet`, the active shim is stale or manually modified; rerun `npx x-for-github-copilot install --permission-mode <your-current-mode>` to refresh it, or set `XGC_AUTO_UPDATE_MODE=off` in `~/.config/xgc/profile.env` if you do not want automatic checks at all.
+Opening a new terminal should not print zsh job-completion noise. If you still see a line such as `[4] + done node "$updater" --check --if-due --quiet`, the active shim is stale or manually modified; rerun `npx x-for-github-copilot install --permission-mode <your-current-mode>` to refresh it, or keep shell-start updates disabled by leaving `XGC_AUTO_UPDATE_ON_SHELL_START` unset.
 
 ## Permission Mode
 
@@ -255,6 +257,29 @@ xgc_mode work
 ```
 
 Explicit Copilot CLI permission flags such as `--allow-all`, `--allow-tool`, or `--deny-tool` still win for a single invocation.
+
+## Reasoning Effort
+
+XGC defaults GitHub Copilot CLI reasoning effort to the highest current CLI level:
+
+```bash
+--reasoning-effort xhigh
+```
+
+That is applied by the shell shim for normal XGC `copilot` / `xgc` runs, including the Repo Master front door and direct XGC lane wrappers. It is not written into custom-agent frontmatter because GitHub custom agent `model:` frontmatter is static and does not carry reasoning effort.
+
+Override for one run:
+
+```bash
+copilot --reasoning-effort high
+copilot --effort medium
+```
+
+Disable the default injection for the current shell:
+
+```bash
+export XGC_REASONING_EFFORT=off
+```
 
 ### Unsafe Unattended Mode
 

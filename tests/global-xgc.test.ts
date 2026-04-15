@@ -23,7 +23,8 @@ const sanitizedXgcEnvPrelude = [
   "unset XGC_ENV_FILE",
   "unset XGC_SESSION_ENV_FILE",
   "unset XGC_HOOK_SCRIPT_ROOT",
-  "unset XGC_PERMISSION_MODE"
+  "unset XGC_PERMISSION_MODE",
+  "unset XGC_REASONING_EFFORT"
 ].join("; ");
 
 function shellQuote(value: string) {
@@ -39,6 +40,52 @@ function createFakeRawCopilot(tempRoot: string) {
       "python3 - \"$@\" <<'PY'",
       "import json, os, sys",
       "print(json.dumps({\"argv\": sys.argv[1:], \"copilotHome\": os.environ.get(\"COPILOT_HOME\"), \"sessionSecret\": os.environ.get(\"XGC_SESSION_TEST_SECRET\"), \"pathEnv\": os.environ.get(\"PATH\")}))",
+      "PY"
+    ].join("\n")
+  );
+  fs.chmodSync(rawPath, 0o755);
+  return rawPath;
+}
+
+function createFakeShutdownRawCopilot(tempRoot: string) {
+  const rawPath = path.join(tempRoot, "copilot-shutdown-raw");
+  fs.writeFileSync(
+    rawPath,
+    [
+      "#!/usr/bin/env bash",
+      "set -euo pipefail",
+      "session_id=\"${XGC_FAKE_SESSION_ID:-session-shell-shutdown-recovery}\"",
+      "session_dir=\"${COPILOT_HOME:?}/session-state/${session_id}\"",
+      "mkdir -p \"$session_dir\"",
+      "python3 - \"$session_dir\" \"$PWD\" \"$session_id\" \"$@\" <<'PY'",
+      "import json, os, pathlib, sys",
+      "session_dir = pathlib.Path(sys.argv[1])",
+      "cwd = sys.argv[2]",
+      "session_id = sys.argv[3]",
+      "argv = sys.argv[4:]",
+      "workspace_yaml = session_dir / 'workspace.yaml'",
+      "events_path = session_dir / 'events.jsonl'",
+      "final_status = os.environ.get('XGC_FAKE_WORKSPACE_FINAL_STATUS', 'in_progress')",
+      "summary_status = os.environ.get('XGC_FAKE_SUMMARY_FINALIZATION_STATUS', 'started')",
+      "workspace_yaml.write_text('\\n'.join([",
+      "    f'id: {session_id}',",
+      "    f'cwd: {json.dumps(cwd)}',",
+      "    f'git_root: {json.dumps(cwd)}',",
+      "    'summary: shell shutdown recovery',",
+      "    'created_at: 2026-04-15T11:24:38.000Z',",
+      "    'updated_at: 2026-04-15T11:24:38.000Z',",
+      "    f'summary_finalization_status: {summary_status}',",
+      "    f'final_status: {final_status}',",
+      "    'session_shutdown_observed: false',",
+      "    ''",
+      "]) + '\\n', encoding='utf-8')",
+      "events = [",
+      "    {'type': 'session.start', 'timestamp': '2026-04-15T11:24:38.000Z', 'data': {'cwd': cwd}},",
+      "    {'type': 'assistant.turn_start', 'timestamp': '2026-04-15T11:28:15.000Z', 'data': {'turn': 6}},",
+      "    {'type': 'session.shutdown', 'timestamp': '2026-04-15T11:28:18.000Z', 'data': {'shutdownType': 'routine', 'currentModel': 'claude-sonnet-4.6', 'codeChanges': {'linesAdded': 0, 'linesRemoved': 0, 'filesModified': []}}},",
+      "]",
+      "events_path.write_text('\\n'.join(json.dumps(event) for event in events) + '\\n', encoding='utf-8')",
+      "print(json.dumps({'argv': argv, 'copilotHome': os.environ.get('COPILOT_HOME'), 'sessionId': session_id}))",
       "PY"
     ].join("\n")
   );
@@ -72,6 +119,29 @@ function createFakePreflightCopilot(tempRoot: string) {
   );
   fs.chmodSync(rawPath, 0o755);
   return rawPath;
+}
+
+function parseFlatYaml(filePath: string) {
+  const result: Record<string, unknown> = {};
+  const text = fs.readFileSync(filePath, "utf8");
+  for (const line of text.split(/\r?\n/)) {
+    if (!line || line.startsWith(" ") || !line.includes(":")) continue;
+    const [key, ...rest] = line.split(":");
+    const value = rest.join(":").trim();
+    if (!key) continue;
+    if (value === "true" || value === "false") {
+      result[key] = value === "true";
+    } else if (value === "null") {
+      result[key] = null;
+    } else if (/^-?\d+$/.test(value)) {
+      result[key] = Number.parseInt(value, 10);
+    } else if (value.startsWith("[") || value.startsWith("{") || (value.startsWith('"') && value.endsWith('"'))) {
+      result[key] = JSON.parse(value);
+    } else {
+      result[key] = value;
+    }
+  }
+  return result;
 }
 
 function sourceShimAndRun(opts: {
@@ -149,8 +219,12 @@ function isInjectedPermissionFlag(entry: string) {
   );
 }
 
+function isInjectedReasoningEffortFlag(entry: string) {
+  return entry.startsWith("--reasoning-effort=");
+}
+
 function withoutInjectedFlags(argv: string[]) {
-  return argv.filter((entry) => !injectedContextFlags.has(entry) && !isInjectedPermissionFlag(entry));
+  return argv.filter((entry) => !injectedContextFlags.has(entry) && !isInjectedPermissionFlag(entry) && !isInjectedReasoningEffortFlag(entry));
 }
 
 function frontmatterModel(filePath: string) {
@@ -308,6 +382,7 @@ test("writeGlobalInstallState records update track and policy metadata", () => {
   assert.equal(installState.updatePolicy, "patch-within-track");
   assert.equal(installState.autoUpdateMode, "check");
   assert.equal(installState.permissionMode, "work");
+  assert.equal(installState.reasoningEffort, "xhigh");
   assert.equal(installState.runtimeHome, paths.runtimeHome);
   assert.equal(installState.runtimeCurrentPath, paths.runtimeCurrentPath);
   assert.equal(installState.runtimeCurrentBinPath, paths.runtimeCurrentBinPath);
@@ -324,6 +399,7 @@ test("writeGlobalShellEnv preserves an existing raw Copilot binary when re-mater
   const profileEnv = fs.readFileSync(paths.shellEnvPath, "utf8");
   assert.match(profileEnv, new RegExp(`XGC_RUNTIME_HOME=${shellQuote(paths.runtimeCurrentPath).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
   assert.match(profileEnv, /XGC_PERMISSION_MODE='ask'/);
+  assert.match(profileEnv, /XGC_REASONING_EFFORT='xhigh'/);
   assert.match(profileEnv, /XGC_AUTO_UPDATE_MODE='check'/);
   assert.match(profileEnv, new RegExp(`XGC_COPILOT_RAW_BIN=${shellQuote(rawBin).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
 });
@@ -1763,6 +1839,99 @@ test("xgc shell shim can be sourced from zsh with nounset enabled", (t) => {
   assert.deepEqual(withoutInjectedFlags(call.argv).slice(0, 2), ["--agent", "repo-master"]);
 });
 
+test("xgc shell shim recovers session.shutdown final truth after raw Copilot exits", (t) => {
+  if (spawnSync("bash", ["-lc", "command -v python3"], { encoding: "utf8" }).status !== 0) {
+    t.skip("python3 unavailable");
+    return;
+  }
+
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "xgc-shell-shutdown-recovery-home-"));
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "xgc-shell-shutdown-recovery-workspace-"));
+  const rawBin = createFakeShutdownRawCopilot(tempHome);
+  const shimPath = path.join(repoRoot, "scripts", "xgc-shell.sh");
+  const sessionId = "session-shell-shutdown-recovery";
+
+  const result = spawnSync(
+    "bash",
+    [
+      "-lc",
+      [
+        sanitizedXgcEnvPrelude,
+        `export HOME=${shellQuote(tempHome)}`,
+        `export XGC_COPILOT_RAW_BIN=${shellQuote(rawBin)}`,
+        `export XGC_HOOK_SCRIPT_ROOT=${shellQuote(path.join(repoRoot, "scripts", "hooks"))}`,
+        "export XGC_DISABLE_PROBE_CACHE=1",
+        `source ${shellQuote(shimPath)}`,
+        `cd ${shellQuote(workspace)}`,
+        "copilot --prompt hi"
+      ].join("; ")
+    ],
+    { encoding: "utf8" }
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  const call = JSON.parse(result.stdout.trim()) as { argv: string[]; copilotHome: string | null; sessionId: string };
+  assert.equal(call.copilotHome, path.join(tempHome, ".copilot-xgc"));
+  assert.equal(call.sessionId, sessionId);
+
+  const sessionWorkspaceYaml = path.join(tempHome, ".copilot-xgc", "session-state", sessionId, "workspace.yaml");
+  const repoWorkspaceYaml = path.join(workspace, ".xgc", "validation", "workspace.yaml");
+  const sessionSummary = parseFlatYaml(sessionWorkspaceYaml);
+  const repoSummary = parseFlatYaml(repoWorkspaceYaml);
+
+  assert.equal(sessionSummary.session_shutdown_observed, true);
+  assert.equal(sessionSummary.session_shutdown_recovery_finalized, true);
+  assert.equal(sessionSummary.routine_shutdown_during_open_turn_observed, true);
+  assert.equal(sessionSummary.final_status, "stopped");
+  assert.equal(sessionSummary.summary_finalization_status, "stopped");
+  assert.equal(sessionSummary.session_outcome, "incomplete");
+  assert.equal(repoSummary.operator_truth_source, "repo-owned-validation-workspace");
+  assert.equal(repoSummary.final_status, "stopped");
+});
+
+test("xgc shell shim recovers late session.shutdown after terminal hook finalization", (t) => {
+  if (spawnSync("bash", ["-lc", "command -v python3"], { encoding: "utf8" }).status !== 0) {
+    t.skip("python3 unavailable");
+    return;
+  }
+
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "xgc-shell-late-shutdown-home-"));
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "xgc-shell-late-shutdown-workspace-"));
+  const rawBin = createFakeShutdownRawCopilot(tempHome);
+  const shimPath = path.join(repoRoot, "scripts", "xgc-shell.sh");
+  const sessionId = "session-shell-late-shutdown-recovery";
+
+  const result = spawnSync(
+    "bash",
+    [
+      "-lc",
+      [
+        sanitizedXgcEnvPrelude,
+        `export HOME=${shellQuote(tempHome)}`,
+        `export XGC_COPILOT_RAW_BIN=${shellQuote(rawBin)}`,
+        `export XGC_HOOK_SCRIPT_ROOT=${shellQuote(path.join(repoRoot, "scripts", "hooks"))}`,
+        "export XGC_DISABLE_PROBE_CACHE=1",
+        `export XGC_FAKE_SESSION_ID=${shellQuote(sessionId)}`,
+        "export XGC_FAKE_WORKSPACE_FINAL_STATUS=completed",
+        "export XGC_FAKE_SUMMARY_FINALIZATION_STATUS=finalized",
+        `source ${shellQuote(shimPath)}`,
+        `cd ${shellQuote(workspace)}`,
+        "copilot --prompt hi"
+      ].join("; ")
+    ],
+    { encoding: "utf8" }
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  const sessionWorkspaceYaml = path.join(tempHome, ".copilot-xgc", "session-state", sessionId, "workspace.yaml");
+  const sessionSummary = parseFlatYaml(sessionWorkspaceYaml);
+
+  assert.equal(sessionSummary.session_shutdown_observed, true);
+  assert.equal(sessionSummary.session_shutdown_recovery_finalized, true);
+  assert.equal(sessionSummary.final_status, "stopped");
+  assert.notEqual(sessionSummary.summary_timestamp_stale, true);
+});
+
 test("xgc shell shim auto-discovers raw copilot from zsh without explicit XGC_COPILOT_RAW_BIN", (t) => {
   if (spawnSync("bash", ["-lc", "command -v zsh"], { encoding: "utf8" }).status !== 0) {
     t.skip("zsh unavailable");
@@ -2014,7 +2183,10 @@ test("xgc convenience wrappers target the expected specialist lanes", () => {
   assert.ok(!reviewCall.argv.includes("--disable-builtin-mcps"));
   assert.ok(!reviewCall.argv.includes("--disable-mcp-server=github-mcp-server"));
   assert.ok(!reviewCall.argv.includes("--no-experimental"));
-  assert.deepEqual(reviewCall.argv.slice(0, 2), ["--agent", "merge-gate"]);
+  assert.deepEqual(
+    withoutInjectedFlags(reviewCall.argv).slice(0, 2),
+    ["--agent", "merge-gate"]
+  );
 
   const planCall = sourceShimAndRun({
     tempHome,
@@ -2116,6 +2288,7 @@ test("interactive zsh sourcing does not keep the background updater in the shell
         `export HOME=${shellQuote(tempHome)}`,
         `export XGC_COPILOT_RAW_BIN=${shellQuote(rawBin)}`,
         "export XGC_AUTO_UPDATE_MODE=check",
+        "export XGC_AUTO_UPDATE_ON_SHELL_START=1",
         `source ${shellQuote(path.join(repoRoot, "scripts/xgc-shell.sh"))}`,
         "jobs -l",
         "print -- ---",
@@ -2129,6 +2302,48 @@ test("interactive zsh sourcing does not keep the background updater in the shell
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stderr.trim(), "");
   assert.equal(result.stdout.trim(), "---");
+});
+
+test("interactive zsh sourcing does not run updater unless shell-start updates are explicitly enabled", () => {
+  const zshCheck = spawnSync("bash", ["-lc", "command -v zsh"], { encoding: "utf8" });
+  if (zshCheck.status !== 0) {
+    return;
+  }
+
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "xgc-shell-zsh-no-startup-update-"));
+  const rawBin = createFakeRawCopilot(tempHome);
+  const updaterDir = path.join(tempHome, ".config", "xgc");
+  const markerPath = path.join(tempHome, "updater-ran.txt");
+  const updaterPath = path.join(updaterDir, "xgc-update.mjs");
+  fs.mkdirSync(updaterDir, { recursive: true });
+  fs.writeFileSync(
+    updaterPath,
+    [
+      "import fs from 'node:fs';",
+      `fs.writeFileSync(${JSON.stringify(markerPath)}, 'ran\\n');`
+    ].join("\n")
+  );
+
+  const result = spawnSync(
+    "zsh",
+    [
+      "-ic",
+      [
+        sanitizedXgcEnvPrelude,
+        `export HOME=${shellQuote(tempHome)}`,
+        `export XGC_COPILOT_RAW_BIN=${shellQuote(rawBin)}`,
+        "export XGC_AUTO_UPDATE_MODE=check",
+        `source ${shellQuote(path.join(repoRoot, "scripts/xgc-shell.sh"))}`,
+        "print -- ready"
+      ].join("; ")
+    ],
+    { encoding: "utf8" }
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stderr.trim(), "");
+  assert.equal(result.stdout.trim(), "ready");
+  assert.equal(fs.existsSync(markerPath), false);
 });
 
 test("review wrapper suppresses GitHub context in local workspaces without repo identity", () => {
@@ -2210,6 +2425,7 @@ test("env.sh cannot override shell operational settings at invocation time", () 
       "export XGC_PERMISSION_MODE='yolo'",
       "export XGC_COPILOT_PROFILE_HOME='/tmp/stale-profile-from-env-sh'",
       "export XGC_COPILOT_RAW_BIN='/tmp/stale-raw-bin-from-env-sh'",
+      "export XGC_REASONING_EFFORT='xhigh'",
       "export COPILOT_HOME='/tmp/stale-copilot-home-from-env-sh'",
       "export PATH='/tmp/stale-path-from-env-sh'",
       "export XGC_SESSION_TEST_SECRET='still-loaded'"
@@ -2225,6 +2441,7 @@ test("env.sh cannot override shell operational settings at invocation time", () 
         `export HOME='${tempHome.replace(/'/g, `'\\''`)}'`,
         `export XGC_COPILOT_RAW_BIN='${rawBin.replace(/'/g, `'\\''`)}'`,
         "export XGC_PERMISSION_MODE='work'",
+        "export XGC_REASONING_EFFORT='off'",
         `source '${path.join(repoRoot, "scripts/xgc-shell.sh").replace(/'/g, `'\\''`)}'`,
         "copilot --prompt 'hi'"
       ].join("; ")
@@ -2241,6 +2458,7 @@ test("env.sh cannot override shell operational settings at invocation time", () 
   };
   assert.ok(call.argv.includes("--allow-tool=write"));
   assert.ok(!call.argv.includes("--allow-all"));
+  assert.ok(!call.argv.some((entry) => entry.startsWith("--reasoning-effort")));
   assert.equal(call.copilotHome, path.join(tempHome, ".copilot-xgc"));
   assert.equal(call.sessionSecret, "still-loaded");
   assert.notEqual(call.pathEnv, "/tmp/stale-path-from-env-sh");
@@ -2664,6 +2882,45 @@ test("permission modes inject documented approval flags", () => {
   });
   assert.ok(explicitPermissionCall.argv.includes("--allow-all-tools"));
   assert.ok(!explicitPermissionCall.argv.includes("--allow-all"));
+});
+
+test("reasoning effort defaults to xhigh unless explicitly overridden", () => {
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "xgc-shell-reasoning-effort-"));
+  const rawBin = createFakeRawCopilot(tempHome);
+
+  const defaultCall = sourceShimAndRun({
+    tempHome,
+    rawBin,
+    fnCall: "copilot --prompt 'hi'"
+  });
+  assert.ok(defaultCall.argv.includes("--reasoning-effort=xhigh"));
+
+  const explicitLongFlagCall = sourceShimAndRun({
+    tempHome,
+    rawBin,
+    fnCall: "copilot --reasoning-effort medium --prompt 'hi'"
+  });
+  assert.deepEqual(
+    explicitLongFlagCall.argv.filter((entry) => entry === "--reasoning-effort=xhigh"),
+    []
+  );
+  assert.ok(explicitLongFlagCall.argv.includes("--reasoning-effort"));
+  assert.ok(explicitLongFlagCall.argv.includes("medium"));
+
+  const explicitShortFlagCall = sourceShimAndRun({
+    tempHome,
+    rawBin,
+    fnCall: "copilot --effort=high --prompt 'hi'"
+  });
+  assert.ok(!explicitShortFlagCall.argv.includes("--reasoning-effort=xhigh"));
+  assert.ok(explicitShortFlagCall.argv.includes("--effort=high"));
+
+  const disabledCall = sourceShimAndRun({
+    tempHome,
+    rawBin,
+    fnCall: "export XGC_REASONING_EFFORT=off; copilot --prompt 'hi'"
+  });
+  assert.ok(!disabledCall.argv.some((entry) => entry.startsWith("--reasoning-effort")));
 });
 
 test("profile.env cannot redirect dedicated profile and config homes", () => {

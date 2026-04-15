@@ -1866,6 +1866,88 @@ test("session summary finalizer does not count selected-only specialist lanes as
   assert.equal(summary.specialist_fanout_status, "missing_required");
 });
 
+test("session summary finalizer downgrades success when a required specialist lane is missing", (t) => {
+  if (spawnSync("bash", ["-lc", "command -v python3 && command -v git"], { encoding: "utf8" }).status !== 0) {
+    t.skip("python3 or git unavailable");
+    return;
+  }
+
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "xgc-session-summary-missing-required-specialist-outcome-"));
+  const workspaceRoot = path.join(tempRoot, "workspace");
+  const profileHome = path.join(tempRoot, ".copilot-xgc");
+  const sessionId = "session-missing-required-specialist-outcome";
+  const sessionDir = path.join(profileHome, "session-state", sessionId);
+  const transcriptPath = path.join(sessionDir, "events.jsonl");
+  const workspaceYaml = path.join(sessionDir, "workspace.yaml");
+
+  fs.mkdirSync(sessionDir, { recursive: true });
+  fs.mkdirSync(workspaceRoot, { recursive: true });
+  fs.writeFileSync(path.join(workspaceRoot, "popup.html"), "<body class=\"theme-light\"></body>\n");
+  spawnSync("git", ["init"], { cwd: workspaceRoot, stdio: "ignore" });
+  spawnSync("git", ["config", "user.email", "codex@example.com"], { cwd: workspaceRoot, stdio: "ignore" });
+  spawnSync("git", ["config", "user.name", "Codex"], { cwd: workspaceRoot, stdio: "ignore" });
+  spawnSync("git", ["add", "popup.html"], { cwd: workspaceRoot, stdio: "ignore" });
+  spawnSync("git", ["commit", "-m", "init"], { cwd: workspaceRoot, stdio: "ignore" });
+  fs.writeFileSync(path.join(workspaceRoot, "popup.html"), "<body><script src=\"theme.js\"></script></body>\n");
+
+  fs.writeFileSync(
+    workspaceYaml,
+    [
+      `id: ${sessionId}`,
+      `cwd: ${workspaceRoot}`,
+      `git_root: ${workspaceRoot}`,
+      "summary: Fix visual theme",
+      "created_at: 2026-04-13T09:20:00.000Z",
+      ""
+    ].join("\n")
+  );
+  fs.writeFileSync(
+    transcriptPath,
+    [
+      JSON.stringify({ type: "session.start", timestamp: "2026-04-13T09:20:00.000Z", data: { cwd: workspaceRoot } }),
+      JSON.stringify({
+        type: "user.message",
+        timestamp: "2026-04-13T09:20:01.000Z",
+        data: { content: "The Chrome extension dark mode / light mode UI is not being applied. Check and fix it." }
+      }),
+      JSON.stringify({ type: "subagent.started", timestamp: "2026-04-13T09:20:02.000Z", data: { agentDisplayName: "Repo Master" } }),
+      JSON.stringify({
+        type: "tool.execution_complete",
+        timestamp: "2026-04-13T09:20:03.000Z",
+        data: {
+          toolName: "edit",
+          success: true,
+          result: { content: "File popup.html updated with changes." }
+        }
+      }),
+      JSON.stringify({ type: "assistant.turn_end", timestamp: "2026-04-13T09:20:04.000Z" })
+    ].join("\n") + "\n"
+  );
+
+  const result = spawnSync("python3", [path.join(repoRoot, "scripts/hooks/finalize-session-summary.py"), "agentStop"], {
+    encoding: "utf8",
+    input: JSON.stringify({
+      sessionId,
+      timestamp: Date.parse("2026-04-13T09:20:05.000Z"),
+      cwd: workspaceRoot,
+      transcriptPath,
+      stopReason: "end_turn"
+    }),
+    env: {
+      ...process.env,
+      XGC_COPILOT_PROFILE_HOME: profileHome
+    }
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const summary = parseWorkspaceYaml(workspaceYaml);
+  assert.deepEqual(summary.missing_required_specialist_lanes, ["visual-forge"]);
+  assert.equal(summary.specialist_fanout_status, "missing_required");
+  assert.equal(summary.repo_code_changed, true);
+  assert.equal(summary.session_outcome, "partial-success");
+  assert.equal(summary.session_outcome_detail, "missing_required_specialist_lane_with_repo_changes");
+});
+
 test("session summary finalizer treats docs-only work as requiring Writing Desk", (t) => {
   if (spawnSync("bash", ["-lc", "command -v python3"], { encoding: "utf8" }).status !== 0) {
     t.skip("python3 unavailable");
@@ -3309,6 +3391,190 @@ test("session summary finalizer waits briefly for trailing session shutdown afte
   assert.equal(summary.latest_event_at, "2026-04-13T19:00:04.000Z");
   assert.equal(summary.updated_at, "2026-04-13T19:00:04.000Z");
   assert.equal(summary.route_summary, "Direct Copilot Session");
+});
+
+test("session shutdown recovery finalizes routine shutdown during an open assistant turn", (t) => {
+  if (spawnSync("bash", ["-lc", "command -v python3"], { encoding: "utf8" }).status !== 0) {
+    t.skip("python3 unavailable");
+    return;
+  }
+
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "xgc-session-summary-shutdown-recovery-"));
+  const workspaceRoot = path.join(tempRoot, "workspace");
+  const profileHome = path.join(tempRoot, ".copilot-xgc");
+  const sessionId = "session-routine-shutdown-recovery";
+  const sessionDir = path.join(profileHome, "session-state", sessionId);
+  const transcriptPath = path.join(sessionDir, "events.jsonl");
+  const workspaceYaml = path.join(sessionDir, "workspace.yaml");
+  const validationWorkspaceYaml = path.join(workspaceRoot, ".xgc", "validation", "workspace.yaml");
+
+  fs.mkdirSync(sessionDir, { recursive: true });
+  fs.mkdirSync(workspaceRoot, { recursive: true });
+  fs.writeFileSync(
+    workspaceYaml,
+    [
+      `id: ${sessionId}`,
+      `cwd: ${workspaceRoot}`,
+      `git_root: ${workspaceRoot}`,
+      "summary: dark mode investigation",
+      "created_at: 2026-04-15T11:24:38.000Z",
+      "updated_at: 2026-04-15T11:24:38.000Z",
+      "summary_finalization_status: started",
+      "final_status: in_progress",
+      ""
+    ].join("\n")
+  );
+  fs.writeFileSync(
+    transcriptPath,
+    [
+      JSON.stringify({ type: "session.start", timestamp: "2026-04-15T11:24:38.000Z", data: { cwd: workspaceRoot } }),
+      JSON.stringify({ type: "subagent.selected", timestamp: "2026-04-15T11:24:39.000Z", data: { agentDisplayName: "Repo Master" } }),
+      JSON.stringify({
+        type: "user.message",
+        timestamp: "2026-04-15T11:24:40.000Z",
+        data: { content: "현재 크롬 익스텐션에서 다크모드/라이트모드 적용이 되고있지않은데 한번 확인해줘" }
+      }),
+      JSON.stringify({ type: "assistant.turn_start", timestamp: "2026-04-15T11:28:10.000Z", data: { turn: 5 } }),
+      JSON.stringify({ type: "tool.execution_start", timestamp: "2026-04-15T11:28:12.000Z", data: { toolName: "bash" } }),
+      JSON.stringify({ type: "tool.execution_complete", timestamp: "2026-04-15T11:28:13.000Z", data: { toolName: "bash", success: true } }),
+      JSON.stringify({ type: "assistant.turn_end", timestamp: "2026-04-15T11:28:15.000Z", data: { turn: 5 } }),
+      JSON.stringify({ type: "assistant.turn_start", timestamp: "2026-04-15T11:28:15.100Z", data: { turn: 6 } }),
+      JSON.stringify({
+        type: "session.shutdown",
+        timestamp: "2026-04-15T11:28:18.000Z",
+        data: {
+          shutdownType: "routine",
+          currentModel: "claude-sonnet-4.6",
+          codeChanges: { linesAdded: 0, linesRemoved: 0, filesModified: [] }
+        }
+      })
+    ].join("\n") + "\n"
+  );
+
+  const result = spawnSync("python3", [path.join(repoRoot, "scripts/hooks/finalize-session-summary.py"), "sessionShutdownRecovery"], {
+    encoding: "utf8",
+    input: JSON.stringify({
+      sessionId,
+      timestamp: Date.parse("2026-04-15T11:28:19.000Z"),
+      cwd: workspaceRoot,
+      transcriptPath
+    }),
+    env: {
+      ...process.env,
+      XGC_COPILOT_PROFILE_HOME: profileHome,
+      XGC_FINALIZER_SHUTDOWN_WAIT_SECONDS: "0"
+    }
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const summary = parseWorkspaceYaml(workspaceYaml);
+  assert.equal(summary.session_shutdown_observed, true);
+  assert.equal(summary.session_shutdown_type, "routine");
+  assert.equal(summary.routine_shutdown_during_open_turn_observed, true);
+  assert.equal(summary.session_shutdown_recovery_finalized, true);
+  assert.equal(summary.terminal_stop_hook_observed, false);
+  assert.equal(summary.final_status, "stopped");
+  assert.equal(summary.stop_reason, "session_shutdown_routine");
+  assert.equal(summary.summary_finalization_status, "stopped");
+  assert.equal(summary.finalization_complete, false);
+  assert.equal(summary.finalization_partial, true);
+  assert.equal(summary.latest_event_at, "2026-04-15T11:28:18.000Z");
+  assert.equal(summary.updated_at, "2026-04-15T11:28:19.000Z");
+  assert.equal(summary.summary_authority, "finalized_with_gaps");
+  assert.match((summary.summary_authority_reasons as string[]).join("\n"), /session\.shutdown recovery finalized/);
+  assert.match((summary.summary_authority_reasons as string[]).join("\n"), /assistant turn was still open/);
+  assert.equal(summary.session_outcome, "incomplete");
+  assert.equal(summary.session_outcome_detail, "stopped_without_repo_changes");
+  assert.ok(fs.existsSync(validationWorkspaceYaml));
+  const repoSummary = parseWorkspaceYaml(validationWorkspaceYaml);
+  assert.equal(repoSummary.operator_truth_source, "repo-owned-validation-workspace");
+  assert.equal(repoSummary.final_status, "stopped");
+  assertNoDuplicateTopLevelYamlKeys(workspaceYaml);
+});
+
+test("session summary finalizer downgrades terminal hook completion when routine shutdown cuts off an open turn", (t) => {
+  if (spawnSync("bash", ["-lc", "command -v python3"], { encoding: "utf8" }).status !== 0) {
+    t.skip("python3 unavailable");
+    return;
+  }
+
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "xgc-session-summary-routine-open-turn-"));
+  const workspaceRoot = path.join(tempRoot, "workspace");
+  const profileHome = path.join(tempRoot, ".copilot-xgc");
+  const sessionId = "session-terminal-hook-routine-open-turn";
+  const sessionDir = path.join(profileHome, "session-state", sessionId);
+  const transcriptPath = path.join(sessionDir, "events.jsonl");
+  const workspaceYaml = path.join(sessionDir, "workspace.yaml");
+
+  fs.mkdirSync(sessionDir, { recursive: true });
+  fs.mkdirSync(workspaceRoot, { recursive: true });
+  fs.writeFileSync(
+    workspaceYaml,
+    [
+      `id: ${sessionId}`,
+      `cwd: ${workspaceRoot}`,
+      `git_root: ${workspaceRoot}`,
+      "summary: routine shutdown with terminal hook",
+      "created_at: 2026-04-15T11:30:00.000Z",
+      ""
+    ].join("\n")
+  );
+  fs.writeFileSync(
+    transcriptPath,
+    [
+      JSON.stringify({ type: "session.start", timestamp: "2026-04-15T11:30:00.000Z", data: { cwd: workspaceRoot } }),
+      JSON.stringify({ type: "user.message", timestamp: "2026-04-15T11:30:01.000Z", data: { content: "Fix the broken theme toggle" } }),
+      JSON.stringify({ type: "tool.execution_start", timestamp: "2026-04-15T11:30:02.000Z", data: { toolName: "bash" } }),
+      JSON.stringify({ type: "tool.execution_complete", timestamp: "2026-04-15T11:30:03.000Z", data: { toolName: "bash", success: true } }),
+      JSON.stringify({ type: "assistant.turn_start", timestamp: "2026-04-15T11:30:04.000Z", data: { turn: 3 } }),
+      JSON.stringify({
+        type: "hook.start",
+        timestamp: "2026-04-15T11:30:05.000Z",
+        data: {
+          hookInvocationId: "agent-stop-open-turn",
+          hookType: "agentStop",
+          input: { sessionId, cwd: workspaceRoot, transcriptPath, stopReason: "end_turn" }
+        }
+      }),
+      JSON.stringify({
+        type: "session.shutdown",
+        timestamp: "2026-04-15T11:30:06.000Z",
+        data: {
+          shutdownType: "routine",
+          currentModel: "claude-sonnet-4.6",
+          codeChanges: { linesAdded: 0, linesRemoved: 0, filesModified: [] }
+        }
+      })
+    ].join("\n") + "\n"
+  );
+
+  const result = spawnSync("python3", [path.join(repoRoot, "scripts/hooks/finalize-session-summary.py"), "agentStop"], {
+    encoding: "utf8",
+    input: JSON.stringify({
+      sessionId,
+      timestamp: Date.parse("2026-04-15T11:30:05.000Z"),
+      cwd: workspaceRoot,
+      transcriptPath,
+      stopReason: "end_turn"
+    }),
+    env: {
+      ...process.env,
+      XGC_COPILOT_PROFILE_HOME: profileHome,
+      XGC_FINALIZER_SHUTDOWN_WAIT_SECONDS: "0"
+    }
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const summary = parseWorkspaceYaml(workspaceYaml);
+  assert.equal(summary.terminal_stop_hook_observed, true);
+  assert.equal(summary.routine_shutdown_during_open_turn_observed, true);
+  assert.equal(summary.session_shutdown_observed, true);
+  assert.equal(summary.final_status, "stopped");
+  assert.equal(summary.summary_finalization_status, "stopped");
+  assert.equal(summary.session_outcome, "incomplete");
+  assert.equal(summary.session_outcome_detail, "stopped_without_repo_changes");
+  assert.equal(summary.summary_authority, "finalized_with_gaps");
+  assert.match((summary.summary_authority_reasons as string[]).join("\n"), /assistant turn was still open/);
 });
 
 test("session summary finalizer does not downgrade status for non-terminal subagentStop", (t) => {

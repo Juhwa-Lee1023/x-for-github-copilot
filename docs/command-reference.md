@@ -39,6 +39,8 @@ X for GitHub Copilot currently supports GitHub Copilot CLI workflows. It is an i
   routes directly to the bounded high-accuracy review lane `Required Check`
 - `xgc_mode`
   prints or switches the current shell permission mode: `ask`, `work`, or `yolo`
+- `XGC_REASONING_EFFORT`
+  environment override for the reasoning-effort flag injected into XGC Copilot runs; default is `xhigh`, and `off` disables injection
 - `xgc_update`
   compatibility alias for `xgc update`
 - `xgc_preflight`

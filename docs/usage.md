@@ -64,6 +64,8 @@ xgc uninstall --reset-raw-config --clear-raw-state
   X for GitHub Copilot profile + `required-check`
 - `xgc_mode`
   switches the current shell between `ask`, `work`, and `yolo` Copilot permission modes
+- `XGC_REASONING_EFFORT`
+  controls the default Copilot CLI reasoning effort injected by the XGC shim; default is `xhigh`, and `off` disables injection for the current shell
 - `xgc doctor`
   validates the installed runtime/profile state
 - `xgc update`

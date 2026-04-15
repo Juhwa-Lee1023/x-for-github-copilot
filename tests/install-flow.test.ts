@@ -42,6 +42,66 @@ function writeExecutable(filePath: string, content: string) {
   fs.chmodSync(filePath, 0o755);
 }
 
+function waitSync(ms: number) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function withNpmPackLock<T>(fn: () => T): T {
+  const lockDir = path.join(os.tmpdir(), "xgc-npm-pack.lock");
+  const startedAt = Date.now();
+
+  while (true) {
+    try {
+      fs.mkdirSync(lockDir);
+      break;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "EEXIST") {
+        throw error;
+      }
+
+      try {
+        const stat = fs.statSync(lockDir);
+        if (Date.now() - stat.mtimeMs > 120_000) {
+          fs.rmSync(lockDir, { recursive: true, force: true });
+          continue;
+        }
+      } catch {
+        continue;
+      }
+
+      if (Date.now() - startedAt > 120_000) {
+        throw new Error(`Timed out waiting for npm pack lock: ${lockDir}`);
+      }
+      waitSync(100);
+    }
+  }
+
+  try {
+    return fn();
+  } finally {
+    fs.rmSync(lockDir, { recursive: true, force: true });
+  }
+}
+
+function npmPackTo(packDestination: string) {
+  return withNpmPackLock(() =>
+    execFileSync("npm", ["pack", "--pack-destination", packDestination], {
+      cwd: repoRoot,
+      encoding: "utf8"
+    }).trim()
+  );
+}
+
+function npmPackDryRunJson() {
+  return withNpmPackLock(() =>
+    spawnSync("npm", ["pack", "--json", "--dry-run"], {
+      cwd: repoRoot,
+      encoding: "utf8"
+    })
+  );
+}
+
 test("TypeScript script entrypoints exist", () => {
   for (const script of [
     "scripts/generate-runtime-surfaces.ts",
@@ -65,10 +125,7 @@ test("TypeScript script entrypoints exist", () => {
 });
 
 test("packaged npm bundle contains the runtime files needed for npx install", () => {
-  const result = spawnSync("npm", ["pack", "--json", "--dry-run"], {
-    cwd: repoRoot,
-    encoding: "utf8"
-  });
+  const result = npmPackDryRunJson();
 
   assert.equal(result.status, 0, result.stderr);
   const packResult = JSON.parse(result.stdout) as Array<{ files: Array<{ path: string }> }>;
@@ -114,10 +171,7 @@ test("package runtime dependencies stay empty while build tooling remains dev-on
 
 test("npm package exposes a single default npx bin", () => {
   const packRoot = fs.mkdtempSync(path.join(os.tmpdir(), "xgc-npx-bin-package-"));
-  const packOutput = execFileSync("npm", ["pack", "--pack-destination", packRoot], {
-    cwd: repoRoot,
-    encoding: "utf8"
-  }).trim();
+  const packOutput = npmPackTo(packRoot);
   const packageTgz = path.join(packRoot, packOutput.split(/\r?\n/).at(-1) ?? "");
   execFileSync("tar", ["-xzf", packageTgz, "-C", packRoot]);
   const packedPackage = JSON.parse(
@@ -192,10 +246,7 @@ test("xgc doctor dispatches to compiled runtime-dist validator", () => {
 test("packaged xgc install completes without invoking npm", () => {
   const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "xgc-packaged-install-home-"));
   const tempPackRoot = fs.mkdtempSync(path.join(os.tmpdir(), "xgc-packaged-install-package-"));
-  const packOutput = execFileSync("npm", ["pack", "--pack-destination", tempPackRoot], {
-    cwd: repoRoot,
-    encoding: "utf8"
-  }).trim();
+  const packOutput = npmPackTo(tempPackRoot);
   const packageTgz = path.join(tempPackRoot, packOutput.split(/\r?\n/).at(-1) ?? "");
   execFileSync("tar", ["-xzf", packageTgz, "-C", tempPackRoot]);
   const packageRoot = path.join(tempPackRoot, "package");
@@ -810,6 +861,82 @@ test("session bundle report refreshes stale session workspace from terminal even
   const refreshedWorkspaceYaml = fs.readFileSync(path.join(sessionDir, "workspace.yaml"), "utf8");
   assert.match(refreshedWorkspaceYaml, /^stop_reason: "?abort"?$/m);
   assert.doesNotMatch(refreshedWorkspaceYaml, /^stop_reason: "?end_turn"?$/m);
+});
+
+test("session bundle report refreshes stale repo-owned workspace from routine shutdown recovery", () => {
+  const bundleRoot = fs.mkdtempSync(path.join(os.tmpdir(), "xgc-session-bundle-repo-owned-shutdown-"));
+  const validationDir = path.join(bundleRoot, ".xgc", "validation");
+  fs.mkdirSync(validationDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(validationDir, "workspace.yaml"),
+    [
+      "id: session-awayalert",
+      "operator_truth_source: repo-owned-validation-workspace",
+      `cwd: ${bundleRoot}`,
+      `git_root: ${bundleRoot}`,
+      "summary: dark mode investigation",
+      "created_at: 2026-04-15T11:24:38.000Z",
+      "updated_at: 2026-04-15T11:24:38.000Z",
+      "latest_event_at: 2026-04-15T11:24:38.000Z",
+      "final_status: in_progress",
+      "summary_finalization_status: partial",
+      "archive_completeness: partial",
+      ""
+    ].join("\n")
+  );
+  fs.writeFileSync(
+    path.join(validationDir, "events.jsonl"),
+    [
+      JSON.stringify({ type: "session.start", timestamp: "2026-04-15T11:24:38.000Z", data: { cwd: bundleRoot } }),
+      JSON.stringify({
+        type: "user.message",
+        timestamp: "2026-04-15T11:24:40.000Z",
+        data: { content: "현재 크롬 익스텐션에서 다크모드/라이트모드 적용이 되고있지않은데 한번 확인해줘" }
+      }),
+      JSON.stringify({ type: "tool.execution_start", timestamp: "2026-04-15T11:28:12.000Z", data: { toolName: "bash" } }),
+      JSON.stringify({ type: "tool.execution_complete", timestamp: "2026-04-15T11:28:13.000Z", data: { toolName: "bash", success: true } }),
+      JSON.stringify({ type: "assistant.turn_start", timestamp: "2026-04-15T11:28:15.000Z", data: { turn: 6 } }),
+      JSON.stringify({
+        type: "session.shutdown",
+        timestamp: "2026-04-15T11:28:18.000Z",
+        data: { shutdownType: "routine", codeChanges: { linesAdded: 0, linesRemoved: 0, filesModified: [] } }
+      })
+    ].join("\n") + "\n"
+  );
+
+  const result = spawnSync("npm", ["run", "--silent", "report:session-bundle", "--", "--bundle-root", bundleRoot], {
+    cwd: repoRoot,
+    encoding: "utf8"
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const results = JSON.parse(fs.readFileSync(path.join(bundleRoot, "SESSION_RESULTS.json"), "utf8")) as {
+    sessions: Array<{
+      sessionId: string;
+      workspaceTruthSource: string;
+      summaryFinalizationStatus: string;
+      sessionOutcome: string;
+      sessionOutcomeDetail: string;
+      routeSummary: string | null;
+      routeSummarySource: string;
+      latestEventAt: string;
+    }>;
+  };
+  assert.equal(results.sessions.length, 1);
+  assert.equal(results.sessions[0].sessionId, "session-awayalert");
+  assert.equal(results.sessions[0].workspaceTruthSource, "repo-owned-validation-workspace");
+  assert.equal(results.sessions[0].summaryFinalizationStatus, "stopped");
+  assert.equal(results.sessions[0].sessionOutcome, "incomplete");
+  assert.equal(results.sessions[0].sessionOutcomeDetail, "stopped_without_repo_changes");
+  assert.equal(results.sessions[0].routeSummary, "Direct Copilot Session");
+  assert.equal(results.sessions[0].routeSummarySource, "raw_tool_events_fallback");
+  assert.equal(results.sessions[0].latestEventAt, "2026-04-15T11:28:18.000Z");
+
+  const refreshedWorkspaceYaml = fs.readFileSync(path.join(validationDir, "workspace.yaml"), "utf8");
+  assert.match(refreshedWorkspaceYaml, /^final_status: "stopped"$/m);
+  assert.match(refreshedWorkspaceYaml, /^summary_finalization_status: "stopped"$/m);
+  assert.match(refreshedWorkspaceYaml, /^routine_shutdown_during_open_turn_observed: true$/m);
+  assert.match(refreshedWorkspaceYaml, /^session_shutdown_recovery_finalized: true$/m);
 });
 
 test("session bundle report surfaces external validation logs without workspace summaries", () => {

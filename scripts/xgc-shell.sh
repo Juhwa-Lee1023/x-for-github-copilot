@@ -27,6 +27,7 @@ XGC__INITIAL_ENV_FILE_SET=0
 XGC__INITIAL_HOOK_SCRIPT_ROOT_SET=0
 XGC__INITIAL_PERMISSION_MODE_SET=0
 XGC__INITIAL_AUTO_UPDATE_MODE_SET=0
+XGC__INITIAL_REASONING_EFFORT_SET=0
 XGC__INITIAL_COPILOT_HOME_SET=0
 
 if [[ ${XGC_COPILOT_PROFILE_HOME+x} ]]; then
@@ -76,6 +77,13 @@ if [[ ${XGC_AUTO_UPDATE_MODE+x} ]]; then
   XGC__INITIAL_AUTO_UPDATE_MODE="$XGC_AUTO_UPDATE_MODE"
 else
   XGC__INITIAL_AUTO_UPDATE_MODE=""
+fi
+
+if [[ ${XGC_REASONING_EFFORT+x} ]]; then
+  XGC__INITIAL_REASONING_EFFORT_SET=1
+  XGC__INITIAL_REASONING_EFFORT="$XGC_REASONING_EFFORT"
+else
+  XGC__INITIAL_REASONING_EFFORT=""
 fi
 
 if [[ ${COPILOT_HOME+x} ]]; then
@@ -131,6 +139,10 @@ if [[ "${XGC__INITIAL_AUTO_UPDATE_MODE_SET:-0}" -eq 1 ]]; then
   XGC_AUTO_UPDATE_MODE="$XGC__INITIAL_AUTO_UPDATE_MODE"
 fi
 
+if [[ "${XGC__INITIAL_REASONING_EFFORT_SET:-0}" -eq 1 ]]; then
+  XGC_REASONING_EFFORT="$XGC__INITIAL_REASONING_EFFORT"
+fi
+
 if [[ "${XGC__INITIAL_COPILOT_HOME_SET:-0}" -eq 1 ]]; then
   COPILOT_HOME="$XGC__INITIAL_COPILOT_HOME"
   export COPILOT_HOME
@@ -144,6 +156,7 @@ export XGC_ENV_FILE
 export XGC_HOOK_SCRIPT_ROOT
 export XGC_PERMISSION_MODE="${XGC_PERMISSION_MODE:-ask}"
 export XGC_AUTO_UPDATE_MODE="${XGC_AUTO_UPDATE_MODE:-check}"
+export XGC_REASONING_EFFORT="${XGC_REASONING_EFFORT:-xhigh}"
 export XGC_RUNTIME_HOME="${XGC_RUNTIME_HOME:-$HOME/.local/share/xgc/current}"
 
 xgc__resolve_raw_copilot_bin() {
@@ -214,6 +227,7 @@ xgc__load_env() {
   local keep_hook_script_root="${XGC_HOOK_SCRIPT_ROOT:-}"
   local keep_permission_mode="${XGC_PERMISSION_MODE:-}"
   local keep_auto_update_mode="${XGC_AUTO_UPDATE_MODE:-}"
+  local keep_reasoning_effort="${XGC_REASONING_EFFORT:-}"
   local keep_path="${PATH:-}"
   local keep_copilot_home_set=0
   local keep_copilot_home=""
@@ -232,6 +246,7 @@ xgc__load_env() {
   XGC_HOOK_SCRIPT_ROOT="$keep_hook_script_root"
   XGC_PERMISSION_MODE="$keep_permission_mode"
   XGC_AUTO_UPDATE_MODE="$keep_auto_update_mode"
+  XGC_REASONING_EFFORT="$keep_reasoning_effort"
   PATH="$keep_path"
   if [[ $keep_copilot_home_set -eq 1 ]]; then
     COPILOT_HOME="$keep_copilot_home"
@@ -246,6 +261,7 @@ xgc__load_env() {
   export XGC_HOOK_SCRIPT_ROOT
   export XGC_PERMISSION_MODE
   export XGC_AUTO_UPDATE_MODE
+  export XGC_REASONING_EFFORT
   export PATH
 }
 
@@ -364,6 +380,32 @@ xgc__has_explicit_permission_override() {
     esac
   done
   return 1
+}
+
+xgc__has_explicit_reasoning_effort_override() {
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      --effort|--effort=*|--reasoning-effort|--reasoning-effort=*)
+        return 0
+        ;;
+    esac
+  done
+  return 1
+}
+
+xgc__reasoning_effort_flag() {
+  case "${XGC_REASONING_EFFORT:-xhigh}" in
+    low|medium|high|xhigh)
+      printf '%s\n' "--reasoning-effort=${XGC_REASONING_EFFORT}"
+      ;;
+    off|none|disable|disabled|"")
+      ;;
+    *)
+      echo "[X for GitHub Copilot] Unknown XGC_REASONING_EFFORT=${XGC_REASONING_EFFORT}; falling back to xhigh." >&2
+      printf '%s\n' "--reasoning-effort=xhigh"
+      ;;
+  esac
 }
 
 xgc__permission_flags() {
@@ -624,6 +666,162 @@ xgc__probe_cache_seed_from_process_logs() {
   done
 }
 
+xgc__latest_shutdown_recovery_payload() {
+  local profile_home="$1"
+  local workspace_cwd="$2"
+
+  [[ -d "$profile_home/session-state" ]] || return 1
+  command -v python3 >/dev/null 2>&1 || return 1
+
+  python3 - "$profile_home" "$workspace_cwd" <<'PY'
+import json
+import os
+import re
+import sys
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+profile_home = Path(sys.argv[1])
+workspace_cwd = os.path.realpath(sys.argv[2])
+
+try:
+    max_age_seconds = int(os.environ.get("XGC_SESSION_SHUTDOWN_RECOVERY_MAX_AGE_SECONDS", "86400"))
+except ValueError:
+    max_age_seconds = 86400
+
+def parse_iso(value):
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed
+    except ValueError:
+        return None
+
+def parse_flat_yaml(path):
+    data = {}
+    if not path.exists():
+        return data
+    for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        if not line or line.startswith(" ") or ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        key = key.strip()
+        value = value.strip()
+        if not key:
+            continue
+        if value.startswith('"') and value.endswith('"'):
+            try:
+                data[key] = json.loads(value)
+                continue
+            except Exception:
+                pass
+        data[key] = value
+    return data
+
+def terminal_status(value):
+    normalized = str(value or "").strip().strip('"').lower()
+    return normalized in {"completed", "finalized", "stopped", "error", "failed-finalization"}
+
+def yaml_truthy(value):
+    return str(value or "").strip().strip('"').lower() in {"true", "1", "yes", "y"}
+
+def data_cwd(data):
+    if not isinstance(data, dict):
+        return None
+    for key in ("cwd", "workspace", "workspaceRoot"):
+        value = data.get(key)
+        if isinstance(value, str) and value:
+            return value
+    nested = data.get("input")
+    if isinstance(nested, dict):
+        for key in ("cwd", "workspace", "workspaceRoot"):
+            value = nested.get(key)
+            if isinstance(value, str) and value:
+                return value
+    return None
+
+now = datetime.now(timezone.utc)
+candidates = []
+for events_path in (profile_home / "session-state").glob("*/events.jsonl"):
+    session_id = events_path.parent.name
+    workspace_yaml = events_path.parent / "workspace.yaml"
+    yaml_data = parse_flat_yaml(workspace_yaml)
+    if yaml_truthy(yaml_data.get("session_shutdown_observed")) and (
+        terminal_status(yaml_data.get("final_status"))
+        or terminal_status(yaml_data.get("summary_finalization_status"))
+    ):
+        continue
+
+    observed_cwd = yaml_data.get("cwd")
+    latest_dt = None
+    shutdown_observed = False
+    try:
+        lines = events_path.read_text(encoding="utf-8", errors="ignore").splitlines()
+    except OSError:
+        continue
+    for line in lines:
+        if not line.strip():
+            continue
+        try:
+            entry = json.loads(line)
+        except Exception:
+            continue
+        timestamp = parse_iso(entry.get("timestamp"))
+        if timestamp and (latest_dt is None or timestamp > latest_dt):
+            latest_dt = timestamp
+        data = entry.get("data") if isinstance(entry.get("data"), dict) else {}
+        if not observed_cwd:
+            observed_cwd = data_cwd(data)
+        if entry.get("type") == "session.shutdown":
+            shutdown_observed = True
+
+    if not shutdown_observed:
+        continue
+    if not observed_cwd:
+        continue
+    if os.path.realpath(observed_cwd) != workspace_cwd:
+        continue
+    if max_age_seconds > 0 and latest_dt and now - latest_dt > timedelta(seconds=max_age_seconds):
+        continue
+    candidates.append((latest_dt or datetime.min.replace(tzinfo=timezone.utc), session_id, str(events_path), observed_cwd))
+
+if not candidates:
+    sys.exit(1)
+
+latest_dt, session_id, transcript_path, observed_cwd = sorted(candidates, key=lambda item: item[0])[-1]
+print(json.dumps({
+    "sessionId": session_id,
+    "timestamp": int(now.timestamp() * 1000),
+    "cwd": observed_cwd,
+    "transcriptPath": transcript_path,
+}))
+PY
+}
+
+xgc__recover_session_shutdown_after_exit() {
+  [[ "${XGC_DISABLE_SESSION_SHUTDOWN_RECOVERY:-0}" == "1" ]] && return 0
+  local workspace_cwd="${1:-$PWD}"
+  local finalizer="$XGC_HOOK_SCRIPT_ROOT/finalize-session-summary.py"
+  [[ -f "$finalizer" ]] || return 0
+  command -v python3 >/dev/null 2>&1 || return 0
+
+  local payload=""
+  payload="$(xgc__latest_shutdown_recovery_payload "$XGC_COPILOT_PROFILE_HOME" "$workspace_cwd" 2>/dev/null)" || return 0
+  [[ -n "$payload" ]] || return 0
+
+  local log_file="$XGC_COPILOT_CONFIG_HOME/shutdown-recovery.log"
+  mkdir -p "$XGC_COPILOT_CONFIG_HOME" 2>/dev/null || true
+  if ! printf '%s' "$payload" | python3 "$finalizer" sessionShutdownRecovery >>"$log_file" 2>&1; then
+    [[ "${XGC_SESSION_SHUTDOWN_RECOVERY_VERBOSE:-0}" == "1" ]] && echo "[X for GitHub Copilot] session.shutdown recovery failed; see $log_file" >&2
+    return 0
+  fi
+  [[ "${XGC_SESSION_SHUTDOWN_RECOVERY_VERBOSE:-0}" == "1" ]] && echo "[X for GitHub Copilot] recovered session.shutdown final state" >&2
+  return 0
+}
+
 xgc__invoke() {
   local default_agent="$1"
   shift
@@ -652,6 +850,7 @@ xgc__invoke() {
   local disable_builtin_mcps=0
   local disable_experimental_context=0
   local inject_permission_flags=0
+  local inject_reasoning_effort=0
   local rewritten_args=("$@")
   local repo_identity=""
   local repo_root=""
@@ -704,6 +903,15 @@ xgc__invoke() {
     if ! xgc__has_explicit_permission_override "$@"; then
       inject_permission_flags=1
     fi
+    if ! xgc__has_explicit_reasoning_effort_override "$@"; then
+      inject_reasoning_effort=1
+    fi
+  fi
+
+  if [[ $inject_reasoning_effort -eq 1 ]]; then
+    local reasoning_effort_flag=""
+    reasoning_effort_flag="$(xgc__reasoning_effort_flag || true)"
+    [[ -n "$reasoning_effort_flag" ]] && cmd+=("$reasoning_effort_flag")
   fi
 
   if [[ $inject_permission_flags -eq 1 ]]; then
@@ -727,6 +935,7 @@ xgc__invoke() {
   if [[ $use_xgc_profile -eq 1 ]]; then
     COPILOT_HOME="$XGC_COPILOT_PROFILE_HOME" "${cmd[@]}" "${rewritten_args[@]}"
     local exit_code=$?
+    xgc__recover_session_shutdown_after_exit "$PWD" || true
     if [[ -n "$repo_identity" ]]; then
       xgc__probe_cache_seed_from_process_logs "$repo_identity" "$repo_root"
     fi
@@ -885,6 +1094,10 @@ xgc__spawn_detached() {
 
 xgc__maybe_background_update() {
   [[ -n "${XGC_DISABLE_AUTO_UPDATE:-}" ]] && return 0
+  # Shell startup must stay invisible and fast. Users can run xgc_update
+  # explicitly; background startup checks are opt-in because zsh can surface
+  # detached job completion notices in ordinary terminals.
+  [[ "${XGC_AUTO_UPDATE_ON_SHELL_START:-0}" == "1" ]] || return 0
   [[ "$-" == *i* ]] || return 0
 
   local updater="$XGC_COPILOT_CONFIG_HOME/xgc-update.mjs"
