@@ -42,6 +42,11 @@ function writeExecutable(filePath: string, content: string) {
   fs.chmodSync(filePath, 0o755);
 }
 
+function packageVersion() {
+  const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, "package.json"), "utf8")) as { version: string };
+  return pkg.version;
+}
+
 function waitSync(ms: number) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
@@ -252,6 +257,41 @@ test("xgc doctor dispatches to compiled runtime-dist validator", () => {
   assert.deepEqual(marker.argv, ["--repo-root", fs.realpathSync(tempPackage), "--home-dir", tempHome]);
 });
 
+test("xgc uninstall dispatches to compiled runtime-dist uninstall entry", () => {
+  const tempPackage = fs.mkdtempSync(path.join(os.tmpdir(), "xgc-compiled-uninstall-"));
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "xgc-compiled-uninstall-home-"));
+  const markerPath = path.join(tempPackage, "uninstall-marker.json");
+  fs.mkdirSync(path.join(tempPackage, "bin"), { recursive: true });
+  fs.mkdirSync(path.join(tempPackage, "runtime-dist"), { recursive: true });
+  fs.copyFileSync(path.join(repoRoot, "bin", "xgc.mjs"), path.join(tempPackage, "bin", "xgc.mjs"));
+  fs.writeFileSync(
+    path.join(tempPackage, "package.json"),
+    JSON.stringify({ name: "x-for-github-copilot", version: "0.1.0", type: "module" }, null, 2)
+  );
+  fs.writeFileSync(
+    path.join(tempPackage, "runtime-dist", "xgc-uninstall.mjs"),
+    [
+      "#!/usr/bin/env node",
+      "import fs from 'node:fs';",
+      `fs.writeFileSync(${JSON.stringify(markerPath)}, JSON.stringify({ argv: process.argv.slice(2) }));`
+    ].join("\n")
+  );
+
+  const result = spawnSync("node", [path.join(tempPackage, "bin", "xgc.mjs"), "uninstall", "--home-dir", tempHome, "--disable-only"], {
+    cwd: tempPackage,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      HOME: tempHome,
+      XGC_SKIP_SELF_DISPATCH: "1"
+    }
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const marker = JSON.parse(fs.readFileSync(markerPath, "utf8")) as { argv: string[] };
+  assert.deepEqual(marker.argv, ["--home-dir", tempHome, "--disable-only"]);
+});
+
 test("packaged xgc install completes without invoking npm", () => {
   const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "xgc-packaged-install-home-"));
   const tempPackRoot = fs.mkdtempSync(path.join(os.tmpdir(), "xgc-packaged-install-package-"));
@@ -285,9 +325,9 @@ test("packaged xgc install completes without invoking npm", () => {
       "    data = json.loads(config_path.read_text())",
       "except Exception:",
       "    data = {}",
-      "plugins = [p for p in data.get('installed_plugins', []) if p.get('name') != 'xgc']",
-      "plugins.append({'name': 'xgc', 'enabled': True, 'cache_path': plugin_root})",
-      "data['installed_plugins'] = plugins",
+      "plugins = [p for p in data.get('installedPlugins', []) if p.get('name') != 'xgc']",
+      "plugins.append({'name': 'xgc', 'enabled': True, 'cache_path': plugin_root, 'source': {'source': 'local', 'path': plugin_root}})",
+      "data['installedPlugins'] = plugins",
       "config_path.write_text(json.dumps(data, indent=2) + '\\n')",
       "PY",
       "  exit 0",
@@ -327,9 +367,74 @@ test("packaged xgc install completes without invoking npm", () => {
   assert.equal(result.status, 0, result.stderr);
   assert.ok(fs.existsSync(path.join(tempHome, ".local", "share", "xgc", "current", "bin", "xgc.mjs")));
   assert.ok(fs.existsSync(path.join(tempHome, ".config", "xgc", "xgc-update.mjs")));
-  assert.ok(fs.existsSync(path.join(tempHome, ".config", "xgc", "install-state.json")));
+  const installStatePath = path.join(tempHome, ".config", "xgc", "install-state.json");
+  assert.ok(fs.existsSync(installStatePath));
+  const installState = JSON.parse(fs.readFileSync(installStatePath, "utf8")) as { releaseTag?: string; installSource?: string };
+  assert.equal(installState.releaseTag, packageVersion());
+  assert.equal(installState.installSource, "npm-package");
+  const configHomeReport = path.join(tempHome, ".config", "xgc", "validation", "surface-resolution.json");
+  assert.ok(fs.existsSync(configHomeReport));
+  assert.equal(fs.existsSync(path.join(packageRoot, ".xgc", "validation", "surface-resolution.json")), false);
+  assert.match(result.stdout, new RegExp(`Surface resolution JSON: ${configHomeReport.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
   assert.match(result.stderr, /Skipping live runtime validation for packaged install/);
   assert.match(fs.readFileSync(copilotLog, "utf8"), /plugin install/);
+});
+
+test("packaged xgc install rolls back current runtime and avoids shell writes when validation fails", () => {
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "xgc-packaged-install-fail-home-"));
+  const tempPackRoot = fs.mkdtempSync(path.join(os.tmpdir(), "xgc-packaged-install-fail-package-"));
+  const packOutput = npmPackTo(tempPackRoot);
+  const packageTgz = path.join(tempPackRoot, packOutput.split(/\r?\n/).at(-1) ?? "");
+  execFileSync("tar", ["-xzf", packageTgz, "-C", tempPackRoot]);
+  const packageRoot = path.join(tempPackRoot, "package");
+  fs.writeFileSync(
+    path.join(packageRoot, "runtime-dist", "validate-global-xgc.mjs"),
+    "#!/usr/bin/env node\nconsole.error('intentional validation failure');\nprocess.exit(42);\n"
+  );
+
+  const oldRelease = path.join(tempHome, ".local", "share", "xgc", "releases", "0.1.0");
+  const currentPath = path.join(tempHome, ".local", "share", "xgc", "current");
+  fs.mkdirSync(oldRelease, { recursive: true });
+  fs.symlinkSync(oldRelease, currentPath);
+  fs.writeFileSync(path.join(tempHome, ".bashrc"), "export PATH=/usr/bin:$PATH\n");
+  const tempBin = path.join(tempHome, "bin");
+  fs.mkdirSync(tempBin, { recursive: true });
+  writeExecutable(
+    path.join(tempBin, "copilot"),
+    [
+      "#!/usr/bin/env bash",
+      "if [[ \"$1\" == \"plugin\" && \"$2\" == \"list\" ]]; then echo 'xgc'; exit 0; fi",
+      "if [[ \"$1\" == \"plugin\" && \"$2\" == \"install\" ]]; then exit 0; fi",
+      "exit 0"
+    ].join("\n")
+  );
+
+  const result = spawnSync(
+    "node",
+    [
+      path.join(packageRoot, "bin", "xgc.mjs"),
+      "install",
+      "--home-dir",
+      tempHome,
+      "--permission-mode",
+      "ask"
+    ],
+    {
+      cwd: packageRoot,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        HOME: tempHome,
+        PATH: `${tempBin}:${process.env.PATH ?? ""}`,
+        SHELL: "/bin/bash",
+        XGC_SKIP_SELF_DISPATCH: "1"
+      }
+    }
+  );
+
+  assert.equal(result.status, 42);
+  assert.equal(fs.readlinkSync(currentPath), oldRelease);
+  assert.doesNotMatch(fs.readFileSync(path.join(tempHome, ".bashrc"), "utf8"), /xgc global mode/);
 });
 
 test("xgc CLI help advertises npx-first install flow", () => {
@@ -374,11 +479,13 @@ test("release manifest records the prebuilt runtime tarball contract", () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(outputDir, "release-manifest.json"), "utf8")) as {
     agentInstallCommand?: string;
     installCommand?: string;
+    packageBin?: string;
     tarballUrl: string;
     npmPackageSha256: string;
     installedRuntime?: { prebuilt?: boolean; requiresNpmInstall?: boolean; runtimeDistDir?: string };
   };
   assert.equal(manifest.installCommand, "npx x-for-github-copilot install");
+  assert.equal(manifest.packageBin, "x-for-github-copilot");
   assert.equal(
     manifest.agentInstallCommand,
     "npx --yes x-for-github-copilot install --permission-mode <mode> --reasoning-effort xhigh --reasoning-effort-cap high"
@@ -395,6 +502,8 @@ test("xgc updater preserves persisted reasoning settings when applying releases"
 
   assert.match(updater, /"--reasoning-effort",\s*installState\.reasoningEffort \|\| "xhigh"/);
   assert.match(updater, /"--reasoning-effort-cap",\s*installState\.reasoningEffortCap \|\| "high"/);
+  assert.match(updater, /Release manifest checksum is required before applying/);
+  assert.match(updater, /fs\.rmSync\(tempRoot,\s*\{\s*recursive: true,\s*force: true\s*\}\)/);
 });
 
 test("runtime-dist generation is checked into source and strips installed-runtime tsx loaders", () => {
@@ -1840,7 +1949,9 @@ test("global install script wires the dedicated XGC profile flow", () => {
   assert.match(script, /--permission-mode/);
   assert.match(script, /xgc_prompt_permission_mode/);
   assert.match(script, /Shell profile writes are disabled by default\./);
-  assert.match(script, /uninstall-global-xgc\.sh/);
+  assert.match(script, /Open a new terminal, then run: copilot/);
+  assert.match(script, /please star the project/);
+  assert.doesNotMatch(script, /Later, if you want raw Copilot again:/);
   assert.doesNotMatch(script, /append.*shell startup file.*by default/i);
 });
 
@@ -1908,6 +2019,10 @@ test("global uninstall script can disable shell activation and reset raw config 
   assert.equal(rawConfig.last_logged_in_user?.login, "juhlee_SKPLNET");
   assert.equal(rawConfig.logged_in_users?.[0]?.login, "juhlee_SKPLNET");
   assert.match(result.stdout, /Post-remove verification:/);
+  const backupRoot = result.stdout.match(/Backup directory: (.+)/)?.[1]?.trim();
+  assert.ok(backupRoot);
+  const backedUpZshrc = fs.readFileSync(path.join(backupRoot, tempHome.replace(/^\//, ""), ".zshrc"), "utf8");
+  assert.match(backedUpZshrc, /# >>> xgc global mode >>>/);
 });
 
 test("global install script can prompt for permission mode", () => {

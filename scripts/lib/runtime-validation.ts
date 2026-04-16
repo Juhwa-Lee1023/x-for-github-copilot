@@ -618,6 +618,7 @@ export function summarizeObservedSessionModels(stdout: string): ObservedSessionM
         modelChanges.at(-1)?.model ??
         null)
       : (modelChanges.at(-1)?.model ?? null);
+  sessionCurrentModel = sessionCurrentModel ?? modelChanges.at(-1)?.model ?? null;
   const effectiveRequestedModel = requestedRuntimeModel ?? observedRuntimeModels[0] ?? null;
   const observedToolModels = orderedUnique(collapseConsecutiveNames(toolModels));
   const observedModelMetricModels = orderedUnique(collapseConsecutiveNames(modelMetricModels));
@@ -915,6 +916,8 @@ function isFoundationNoiseLine(line: string) {
       line
     ) ||
     (/\bLSP .*server\b/i.test(line) &&
+      /\b(non-constant source not supported|error while parsing|failed to resolve path|unexpected token|syntax error)\b/i.test(line)) ||
+    (/\bLSP .*server\b/i.test(line) &&
       /\/node_modules\//i.test(line) &&
       /\b(warning|error while parsing|unexpected token)\b/i.test(line))
   );
@@ -958,6 +961,7 @@ function isValidationEvidenceLine(line: string) {
     !normalized ||
     isBareToolExitLine(normalized) ||
     isFoundationNoiseLine(normalized) ||
+    isNonValidationCommandFailureLine(normalized) ||
     (!isStructuredValidationResultLine(normalized) && isPromptOrRequirementLine(normalized)) ||
     (!isValidationCheckmarkResultLine(normalized) && isPlanningOrAdvisoryLine(normalized))
   ) {
@@ -967,7 +971,7 @@ function isValidationEvidenceLine(line: string) {
   return (
     /^(?:[$>#]\s*)?(?:npm|npx|pnpm|yarn|bun|vitest|playwright|next|prisma)\b/i.test(normalized) ||
     /\b(validation_exit\s*[:=]\s*\d+|validation_state\s*[:=]\s*done|state=done)\b/i.test(normalized) ||
-    /^(?:Running\s+\d+\s+(?:tests?|workers?)|Test Files?\s+\d+\s+(?:passed|failed)|No ESLint warnings or errors|Compiled successfully|build passed|validation passed|validation command passed|validation no-match check passed|smoke test passed|\d+\s+passed|\d+\s+failed)\b/i.test(
+    /^(?:Running\s+\d+\s+(?:tests?|workers?)|Test Files?\s+\d+\s+(?:passed|failed)|No ESLint warnings or errors|Compiled successfully|build passed|validation passed|validation command passed|validation search check passed|validation no-match check passed|smoke test passed|\d+\s+passed|\d+\s+failed)\b/i.test(
       normalized
     ) ||
     /\b(AssertionError|ReferenceError|SyntaxError|TimeoutError|failed to compile|tests?\s+failed|test files?\s+\d+\s+failed|command failed|returned non-zero|exit code\s+[1-9]|npm ERR!|ELIFECYCLE|EADDRINUSE|address already in use|ERR_CONNECTION_REFUSED|connection refused|dev server did not become ready|page\.goto:\s*net::ERR_CONNECTION_REFUSED|playwright web server did not become ready)\b/i.test(
@@ -986,8 +990,14 @@ function isBareToolExitLine(line: string) {
   return /^<exited with exit code -?\d+>$/i.test(line.trim());
 }
 
+function isNonValidationCommandFailureLine(line: string) {
+  return /\bCommand failed with exit code\s+[1-9]\s*:\s*(?:git\s+(?:add|commit|status|diff|checkout|restore|reset|rm|mv)|zip|tar|cp|mv|rm|mkdir|ls|find|grep|rg)\b/i.test(
+    line.trim()
+  );
+}
+
 function isStructuredValidationResultLine(line: string) {
-  return /^\s*validation\s+(?:command|no-match check)\s+(?:passed|failed)\b/i.test(line);
+  return /^\s*validation\s+(?:command|search check|no-match check)\s+(?:passed|failed)\b/i.test(line);
 }
 
 function isRuntimeToolingIssueLine(line: string) {
@@ -1323,12 +1333,18 @@ function deriveObservedAgentInvocations(args: {
     invocations.push({ agentName, timestampMs });
     invocationCounts[agentName] = (invocationCounts[agentName] ?? 0) + 1;
   };
-
+  const flushSelectedFrontDoor = () => {
+    for (const [agentName, timestampMs] of [...pendingSelected.entries()]) {
+      if (agentName === "Repo Master") {
+        recordInvocation(agentName, timestampMs);
+        pendingSelected.delete(agentName);
+      }
+    }
+  };
   for (const event of events) {
     const timestampMs = event.timestampMs ?? null;
     if (event.kind === "selected") {
       if (!activeInvocations.has(event.agentName) && !pendingSelected.has(event.agentName)) {
-        recordInvocation(event.agentName, timestampMs);
         pendingSelected.set(event.agentName, timestampMs);
       }
       continue;
@@ -1336,10 +1352,16 @@ function deriveObservedAgentInvocations(args: {
 
     if (event.kind === "started") {
       if (pendingSelected.has(event.agentName)) {
+        if (event.agentName !== "Repo Master") {
+          flushSelectedFrontDoor();
+        }
+        recordInvocation(event.agentName, pendingSelected.get(event.agentName) ?? timestampMs);
         pendingSelected.delete(event.agentName);
         activeInvocations.add(event.agentName);
         continue;
       }
+      flushSelectedFrontDoor();
+      pendingSelected.clear();
       if (!activeInvocations.has(event.agentName)) {
         recordInvocation(event.agentName, timestampMs);
         activeInvocations.add(event.agentName);
@@ -1348,15 +1370,19 @@ function deriveObservedAgentInvocations(args: {
     }
 
     if (pendingSelected.has(event.agentName)) {
+      recordInvocation(event.agentName, pendingSelected.get(event.agentName) ?? timestampMs);
       pendingSelected.delete(event.agentName);
       continue;
     }
+    flushSelectedFrontDoor();
+    pendingSelected.clear();
     if (!activeInvocations.has(event.agentName)) {
-      recordInvocation(event.agentName, pendingSelected.get(event.agentName) ?? timestampMs);
+      recordInvocation(event.agentName, timestampMs);
     }
     activeInvocations.delete(event.agentName);
     pendingSelected.delete(event.agentName);
   }
+  flushSelectedFrontDoor();
 
   return {
     invocationOrder: invocations.map((entry) => entry.agentName),
@@ -1737,7 +1763,7 @@ export function summarizeValidationLog(text: string): ValidationLogSummary {
     /\b(error|failed|failure|non-zero)\b.*\b(prisma|seed|seeding|typecheck|typescript|eslint|playwright|vitest|next build)\b/i
   ];
   const strongPassPatterns = [
-    /\b(no eslint warnings or errors|npm test passed|tests?\s+\d+\s+passed|test files?\s+\d+\s+passed|compiled successfully|build passed|validation passed|validation command passed|validation no-match check passed|smoke test passed|playwright.*\bpassed|all required validation commands passed)\b/i,
+    /\b(no eslint warnings or errors|npm test passed|tests?\s+\d+\s+passed|test files?\s+\d+\s+passed|compiled successfully|build passed|validation passed|validation command passed|validation search check passed|validation no-match check passed|smoke test passed|playwright.*\bpassed|all required validation commands passed)\b/i,
     /^\s*(?:✓\s*)?\d+\s+passed\b/i,
     /^\s*(?:\d+[\.)]\s*)?`?(?:npm install|npx prisma generate|npx prisma db push --force-reset|npm run seed|npm run lint|npm test|npm run build|npx playwright test)`?\s*(?:✅|passed)\s*$/i,
     /^\s*all passed\.?\s*$/i
@@ -1755,6 +1781,7 @@ export function summarizeValidationLog(text: string): ValidationLogSummary {
       isBareToolExitLine(line) ||
       /\bAgent is still running after waiting\b/i.test(line) ||
       (/\bagent_id:\s*[^,\s]+/i.test(line) && /\bstatus:\s*running\b/i.test(line) && /\btool_calls_completed\b/i.test(line)) ||
+      isNonValidationCommandFailureLine(line) ||
       /\bMCP transport for .* closed\b/i.test(line) ||
       /\bTransient error connecting to HTTP server .*\bfetch failed\b/i.test(line) ||
       /\bRetrying connection to HTTP server\b/i.test(line) ||
@@ -3040,9 +3067,14 @@ export function inspectInstalledPlugin(pluginName: string, opts: { homeDir?: str
   const configPath = candidateConfigPaths.find((candidate) => fs.existsSync(candidate)) ?? candidateConfigPaths[0];
 
   const config = readJsonIfExists<{
+    installedPlugins?: Array<{
+      name?: string;
+      source?: { source_path?: string; path?: string };
+      cache_path?: string;
+    }>;
     installed_plugins?: Array<{
       name?: string;
-      source?: { source_path?: string };
+      source?: { source_path?: string; path?: string };
       cache_path?: string;
     }>;
   }>(configPath);
@@ -3058,17 +3090,23 @@ export function inspectInstalledPlugin(pluginName: string, opts: { homeDir?: str
     };
   }
 
+  const installedPlugins = [
+    ...(Array.isArray(config.installedPlugins) ? config.installedPlugins : []),
+    ...(Array.isArray(config.installed_plugins) ? config.installed_plugins : [])
+  ];
+
   const matchingEntry =
-    config.installed_plugins?.find((entry) => {
+    installedPlugins.find((entry) => {
       if (entry.name === pluginName) return true;
-      if (opts.sourcePath && entry.source?.source_path) {
-        return path.resolve(entry.source.source_path) === path.resolve(opts.sourcePath);
+      const entrySourcePath = entry.source?.source_path ?? entry.source?.path;
+      if (opts.sourcePath && entrySourcePath) {
+        return path.resolve(entrySourcePath) === path.resolve(opts.sourcePath);
       }
       return false;
     }) ?? null;
 
   if (!matchingEntry) {
-    notes.push(`plugin was not found in installed_plugins for ${configPath}`);
+    notes.push(`plugin was not found in installedPlugins/installed_plugins for ${configPath}`);
     return {
       configPath,
       registeredInConfig: false,

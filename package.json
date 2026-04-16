@@ -1,6 +1,6 @@
 {
   "name": "x-for-github-copilot",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "private": false,
   "license": "MIT",
   "description": "X for GitHub Copilot: planning-first integration orchestration and runtime truth for GitHub Copilot CLI workflows.",

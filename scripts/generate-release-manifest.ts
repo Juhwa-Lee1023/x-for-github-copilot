@@ -76,7 +76,7 @@ const releaseManifest = {
   schemaVersion: 1,
   product: "xgc",
   npmPackage: "x-for-github-copilot",
-  packageBin: "xgc",
+  packageBin: "x-for-github-copilot",
   repo: args.repo,
   version: args.version,
   tag: args.tag,

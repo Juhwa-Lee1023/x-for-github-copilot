@@ -202,8 +202,8 @@ function createGitHubRemoteWorkspace() {
 function main() {
   const args = parseArgs(process.argv.slice(2));
   const paths = resolveGlobalPaths(args.homeDir);
-  const surfaceReportJson = path.join(args.repoRoot, ".xgc", "validation", "surface-resolution.json");
-  const surfaceReportMd = path.join(args.repoRoot, ".xgc", "validation", "surface-resolution.md");
+  const surfaceReportJson = path.join(paths.configHome, "validation", "surface-resolution.json");
+  const surfaceReportMd = path.join(paths.configHome, "validation", "surface-resolution.md");
 
   assert.ok(fs.existsSync(paths.profileHome), `X for GitHub Copilot profile home is missing: ${paths.profileHome}`);
   assert.ok(fs.existsSync(paths.configHome), `X for GitHub Copilot config home is missing: ${paths.configHome}`);

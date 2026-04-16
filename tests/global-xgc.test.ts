@@ -356,6 +356,7 @@ test("materializeGlobalProfile creates a dedicated XGC profile with user-level a
     logged_in_users?: unknown[];
     trusted_folders?: string[];
     custom_agents?: { default_local_only?: boolean };
+    installedPlugins?: unknown[];
     installed_plugins?: unknown[];
   };
   assert.equal(profileConfig.model, undefined);
@@ -363,6 +364,7 @@ test("materializeGlobalProfile creates a dedicated XGC profile with user-level a
   assert.equal(Array.isArray(profileConfig.logged_in_users), true);
   assert.equal(profileConfig.custom_agents?.default_local_only, true);
   assert.ok(profileConfig.trusted_folders?.includes(tempRepo));
+  assert.equal("installedPlugins" in profileConfig, false);
   assert.equal("installed_plugins" in profileConfig, false);
 
   const lspConfig = JSON.parse(fs.readFileSync(result.lspConfigPath, "utf8")) as {
@@ -377,6 +379,17 @@ test("materializeGlobalProfile creates a dedicated XGC profile with user-level a
   }
 });
 
+test("materialized hook common keeps detached watcher spawn without nohup shell-job fallback", async () => {
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "xgc-global-hook-common-detach-"));
+  const tempRepo = createMinimalRepoFixture();
+  const result = await materializeGlobalProfile({ repoRoot: tempRepo, homeDir: tempHome });
+  const commonPath = path.join(result.paths.profileHookScriptsDir, "common.sh");
+  const commonText = fs.readFileSync(commonPath, "utf8");
+
+  assert.match(commonText, /start_new_session=True/);
+  assert.doesNotMatch(commonText, /nohup\s+bash/);
+});
+
 test("writeGlobalInstallState records update track and policy metadata", () => {
   const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "xgc-global-install-state-"));
   const paths = resolveGlobalPaths(tempHome);
@@ -389,9 +402,10 @@ test("writeGlobalInstallState records update track and policy metadata", () => {
   });
 
   const installState = JSON.parse(fs.readFileSync(paths.installStatePath, "utf8")) as Record<string, unknown>;
+  const [major, minor] = packageVersion().split(".");
   assert.equal(installState.version, packageVersion());
   assert.equal(installState.releaseTag, `v${packageVersion()}`);
-  assert.equal(installState.updateTrack, "0.1");
+  assert.equal(installState.updateTrack, `${major}.${minor}`);
   assert.equal(installState.updatePolicy, "patch-within-track");
   assert.equal(installState.autoUpdateMode, "check");
   assert.equal(installState.permissionMode, "work");
@@ -770,9 +784,9 @@ test("materializeGlobalProfile filters stale legacy plugins from the dedicated X
   );
 
   const result = await materializeGlobalProfile({ repoRoot: tempRepo, homeDir: tempHome });
-  const profileConfig = JSON.parse(fs.readFileSync(result.configPath, "utf8")) as { installed_plugins?: Array<{ name?: string }> };
+  const profileConfig = JSON.parse(fs.readFileSync(result.configPath, "utf8")) as { installedPlugins?: Array<{ name?: string }> };
 
-  assert.deepEqual(profileConfig.installed_plugins?.map((entry) => entry.name), ["xgc"]);
+  assert.deepEqual(profileConfig.installedPlugins?.map((entry) => entry.name), ["xgc"]);
 });
 
 test("materializeGlobalProfile recovers local plugin registration when a dedicated profile cache already exists", async () => {
@@ -787,13 +801,13 @@ test("materializeGlobalProfile recovers local plugin registration when a dedicat
 
   const result = await materializeGlobalProfile({ repoRoot: tempRepo, homeDir: tempHome });
   const profileConfig = JSON.parse(fs.readFileSync(result.configPath, "utf8")) as {
-    installed_plugins?: Array<{ name?: string; enabled?: boolean; cache_path?: string; source?: { source?: string; path?: string } }>;
+    installedPlugins?: Array<{ name?: string; enabled?: boolean; cache_path?: string; source?: { source?: string; path?: string } }>;
   };
-  assert.equal(profileConfig.installed_plugins?.length, 1);
-  assert.equal(profileConfig.installed_plugins?.[0]?.name, "xgc");
-  assert.equal(profileConfig.installed_plugins?.[0]?.enabled, true);
-  assert.equal(profileConfig.installed_plugins?.[0]?.cache_path, profilePluginCache);
-  assert.deepEqual(profileConfig.installed_plugins?.[0]?.source, { source: "local", path: tempRepo });
+  assert.equal(profileConfig.installedPlugins?.length, 1);
+  assert.equal(profileConfig.installedPlugins?.[0]?.name, "xgc");
+  assert.equal(profileConfig.installedPlugins?.[0]?.enabled, true);
+  assert.equal(profileConfig.installedPlugins?.[0]?.cache_path, profilePluginCache);
+  assert.deepEqual(profileConfig.installedPlugins?.[0]?.source, { source: "local", path: tempRepo });
 });
 
 test("materializeGlobalProfile refreshes plugin registration version from the source manifest", async () => {
@@ -807,11 +821,11 @@ test("materializeGlobalProfile refreshes plugin registration version from the so
 
   const result = await materializeGlobalProfile({ repoRoot: tempRepo, homeDir: tempHome });
   const profileConfig = JSON.parse(fs.readFileSync(result.configPath, "utf8")) as {
-    installed_plugins?: Array<{ name?: string; version?: string }>;
+    installedPlugins?: Array<{ name?: string; version?: string }>;
   };
 
-  assert.equal(profileConfig.installed_plugins?.[0]?.name, "xgc");
-  assert.equal(profileConfig.installed_plugins?.[0]?.version, "0.1.1");
+  assert.equal(profileConfig.installedPlugins?.[0]?.name, "xgc");
+  assert.equal(profileConfig.installedPlugins?.[0]?.version, "0.1.1");
 });
 
 test("materializeGlobalProfile drops active root model instead of injecting it into runtime config", async () => {
@@ -1228,6 +1242,52 @@ test("raw hook conflict detection resolves relative cache_path from the Copilot 
           {
             name: "xgc",
             cache_path: relativeCachePath
+          }
+        ]
+      },
+      null,
+      2
+    )
+  );
+
+  const conflicts = findLegacyHookPluginConflicts({ homeDir: tempHome });
+  assert.equal(conflicts.length, 1);
+  assert.equal(conflicts[0].cachePath, pluginCachePath);
+  assert.equal(conflicts[0].hookManifestPath, hookManifestPath);
+});
+
+test("raw hook conflict detection reads current Copilot installedPlugins shape", () => {
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "xgc-modern-hook-plugin-"));
+  const rawCopilotHome = path.join(tempHome, ".copilot");
+  const pluginCachePath = path.join(rawCopilotHome, "installed-plugins", "_direct", "0.1.1");
+  const hookManifestPath = path.join(pluginCachePath, "hooks", "hooks.json");
+  fs.mkdirSync(path.dirname(hookManifestPath), { recursive: true });
+  fs.writeFileSync(
+    path.join(pluginCachePath, "plugin.json"),
+    JSON.stringify({ name: "xgc", hooks: "hooks/hooks.json" }, null, 2)
+  );
+  fs.writeFileSync(
+    hookManifestPath,
+    JSON.stringify(
+      {
+        version: 1,
+        hooks: {
+          sessionStart: [{ type: "command", bash: "bash ./scripts/hooks/session-start.sh", cwd: "." }]
+        }
+      },
+      null,
+      2
+    )
+  );
+  fs.writeFileSync(
+    path.join(rawCopilotHome, "config.json"),
+    JSON.stringify(
+      {
+        installedPlugins: [
+          {
+            name: "xgc",
+            source: { source: "local", path: "/tmp/xgc-runtime" },
+            cache_path: pluginCachePath
           }
         ]
       },
@@ -2337,10 +2397,13 @@ test("interactive zsh sourcing does not keep the background updater in the shell
   const rawBin = createFakeRawCopilot(tempHome);
   const updaterDir = path.join(tempHome, ".config", "xgc");
   const updaterPath = path.join(updaterDir, "xgc-update.mjs");
+  const updaterArgsPath = path.join(tempHome, "updater-args.json");
   fs.mkdirSync(updaterDir, { recursive: true });
   fs.writeFileSync(
     updaterPath,
     [
+      "import fs from 'node:fs';",
+      `fs.writeFileSync(${JSON.stringify(updaterArgsPath)}, JSON.stringify(process.argv.slice(2)));`,
       "setTimeout(() => process.exit(0), 300);"
     ].join("\n")
   );
@@ -2368,6 +2431,15 @@ test("interactive zsh sourcing does not keep the background updater in the shell
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stderr.trim(), "");
   assert.equal(result.stdout.trim(), "---");
+  assert.deepEqual(JSON.parse(fs.readFileSync(updaterArgsPath, "utf8")) as string[], [
+    "--home-dir",
+    tempHome,
+    "--config-home",
+    updaterDir,
+    "--check",
+    "--if-due",
+    "--quiet"
+  ]);
 });
 
 test("interactive zsh sourcing does not run updater unless shell-start updates are explicitly enabled", () => {
@@ -2919,20 +2991,36 @@ test("permission modes inject documented approval flags", () => {
     fnCall: "export XGC_PERMISSION_MODE=work; copilot --prompt 'hi'"
   });
   assert.ok(workCall.argv.includes("--allow-tool=write"));
+  assert.ok(workCall.argv.includes("--allow-tool=shell(pwd)"));
   assert.ok(workCall.argv.includes("--allow-tool=shell(git:*)"));
   assert.ok(workCall.argv.includes("--allow-tool=shell(gh:*)"));
   assert.ok(workCall.argv.includes("--allow-tool=shell(printf:*)"));
+  assert.ok(workCall.argv.includes("--allow-tool=shell(cat:*)"));
+  assert.ok(workCall.argv.includes("--allow-tool=shell(sed:*)"));
+  assert.ok(workCall.argv.includes("--allow-tool=shell(find:*)"));
+  assert.ok(workCall.argv.includes("--allow-tool=shell(head:*)"));
+  assert.ok(workCall.argv.includes("--allow-tool=shell(tail:*)"));
+  assert.ok(workCall.argv.includes("--allow-tool=shell(wc:*)"));
+  assert.ok(workCall.argv.includes("--allow-tool=shell(grep:*)"));
+  assert.ok(workCall.argv.includes("--allow-tool=shell(awk:*)"));
+  assert.ok(workCall.argv.includes("--allow-tool=shell(jq:*)"));
+  assert.ok(workCall.argv.includes("--allow-tool=shell(mkdir:*)"));
+  assert.ok(workCall.argv.includes("--allow-tool=shell(touch:*)"));
+  assert.ok(workCall.argv.includes("--allow-tool=shell(cp:*)"));
+  assert.ok(workCall.argv.includes("--allow-tool=shell(mv:*)"));
   assert.ok(workCall.argv.includes("--allow-tool=shell(npm:*)"));
   assert.ok(workCall.argv.includes("--allow-tool=shell(npx:*)"));
+  assert.ok(workCall.argv.includes("--allow-tool=shell(yarn:*)"));
+  assert.ok(workCall.argv.includes("--allow-tool=shell(bun:*)"));
   assert.ok(workCall.argv.includes("--allow-tool=shell(tsx:*)"));
   assert.ok(workCall.argv.includes("--allow-tool=shell(rg:*)"));
   assert.ok(workCall.argv.includes("--allow-tool=shell(ls:*)"));
-  assert.ok(!workCall.argv.includes("--allow-tool=shell(sed:*)"));
-  assert.ok(!workCall.argv.includes("--allow-tool=shell(cat:*)"));
-  assert.ok(!workCall.argv.includes("--allow-tool=shell(find:*)"));
-  assert.ok(!workCall.argv.includes("--allow-tool=shell(head:*)"));
-  assert.ok(!workCall.argv.includes("--allow-tool=shell(tail:*)"));
   assert.ok(workCall.argv.includes("--deny-tool=shell(rm)"));
+  assert.ok(workCall.argv.includes("--deny-tool=shell(rm:*)"));
+  assert.ok(workCall.argv.includes("--deny-tool=shell(sudo)"));
+  assert.ok(workCall.argv.includes("--deny-tool=shell(sudo:*)"));
+  assert.ok(workCall.argv.includes("--deny-tool=shell(chmod)"));
+  assert.ok(workCall.argv.includes("--deny-tool=shell(chmod:*)"));
   assert.ok(workCall.argv.includes("--deny-tool=shell(git push)"));
   assert.ok(workCall.argv.includes("--allow-url=github.com"));
 
@@ -3121,10 +3209,12 @@ test("global installer previews shell profile changes by default without writing
   assert.equal(fs.existsSync(profilePath), false);
 });
 
-test("global installer documents interactive shell verification command", () => {
+test("global installer keeps final success guidance concise", () => {
   const installer = fs.readFileSync(path.join(repoRoot, "scripts/install-global-xgc.sh"), "utf8");
-  assert.match(installer, /zsh -ic 'type copilot; copilot --version'/);
-  assert.match(installer, /Do not use 'zsh -l -c' as the activation check on macOS/);
+  assert.match(installer, /Open a new terminal, then run: copilot/);
+  assert.match(installer, /please star the project: https:\/\/github\.com\/Juhwa-Lee1023\/x-for-github-copilot/);
+  assert.doesNotMatch(installer, /Useful commands:/);
+  assert.doesNotMatch(installer, /Verify shell activation in a new interactive shell/);
 });
 
 test("global installer writes an idempotent shell block and creates a backup", () => {

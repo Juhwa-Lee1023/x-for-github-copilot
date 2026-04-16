@@ -59,6 +59,8 @@ const largeTaskModulePattern =
 
 const visualScopePattern =
   /\b(ui|ux|frontend|front-end|css|layout|responsive|animation|motion|visual (?:polish|identity)|design system|spacing|accessibility|components?|theme|light mode|dark mode|browser extension|chrome extension)\b|라이트모드|다크모드|크롬\s*익스텐션|테마/i;
+const visualRequiredScopePattern =
+  /\b(?:polish|refine|audit|review)\b[\s\S]{0,80}\b(?:ui|ux|frontend|front-end|css|layout|responsive|visual|design|accessibility|animation|motion|spacing|hierarchy)\b|\b(?:fix|repair|resolve|debug)\b[\s\S]{0,80}\b(?:ui|ux|frontend|front-end|css|layout|responsive|visual|design|accessibility|theme|light mode|dark mode|browser extension|chrome extension)\b|\b(?:ui|ux|frontend|front-end|css|layout|responsive|visual|design|accessibility|theme|light mode|dark mode|browser extension|chrome extension)\b[\s\S]{0,80}\b(?:fix|repair|resolve|debug)\b|\bcreate\b[\s\S]{0,80}\bvisual\b|\b(?:ui\/ux|visual hierarchy|design system|frontend polish|responsive ui layout|css spacing|animation|motion|accessibility)\b|(?:라이트모드|다크모드|크롬\s*익스텐션|테마)[\s\S]{0,80}(?:해결|수정|고쳐|안되고|안\s*되고|적용이\s*안)|(?:해결|수정|고쳐|안되고|안\s*되고|적용이\s*안)[\s\S]{0,80}(?:라이트모드|다크모드|크롬\s*익스텐션|테마)/i;
 const writingScopePattern =
   /\b(docs?|documentation|readme|onboarding|release notes?|migration notes?|changelog|technical writing|guide|manual)\b/i;
 const multimodalAnalysisPattern =
@@ -203,6 +205,8 @@ export function summarizeSpecialistFanoutPolicy(args: SpecialistFanoutPolicyInpu
   const required = new Set<SpecialistAgentId>();
   const recommended = new Set<SpecialistAgentId>();
   const visualScopeObserved = visualScopePattern.test(scopeText);
+  const visualRequiredScopeObserved = visualRequiredScopePattern.test(scopeText);
+  const multimodalRequired = requiresMultimodalLook(scopeText);
   const writingScopeObserved = writingScopePattern.test(scopeText);
   const artistryScopeObserved = artistryScopePattern.test(scopeText);
 
@@ -211,7 +215,7 @@ export function summarizeSpecialistFanoutPolicy(args: SpecialistFanoutPolicyInpu
       required.add(specialistId);
     }
   }
-  if (!largeProductBuildTaskObserved && visualScopeObserved) {
+  if (!largeProductBuildTaskObserved && visualRequiredScopeObserved && !multimodalRequired) {
     required.add("visual-forge");
   }
   if (!largeProductBuildTaskObserved && writingScopeObserved) {
@@ -220,7 +224,7 @@ export function summarizeSpecialistFanoutPolicy(args: SpecialistFanoutPolicyInpu
   if (!largeProductBuildTaskObserved && artistryScopeObserved) {
     required.add("artistry-studio");
   }
-  if (requiresMultimodalLook(scopeText)) {
+  if (multimodalRequired) {
     required.add("multimodal-look");
   }
 
@@ -278,9 +282,12 @@ export function summarizeSpecialistFanoutPolicy(args: SpecialistFanoutPolicyInpu
   } else if (specialistFanoutCoveredByPatchMaster) {
     specialistFanoutStatus = "covered_by_patch_master_swarm";
     specialistFanoutReason = "recommended specialist lanes were absent but Patch Master swarm coverage was observed";
-  } else {
+  } else if (largeProductBuildTaskObserved) {
     specialistFanoutStatus = "partial";
     specialistFanoutReason = `recommended specialist lanes not observed: ${missingRecommendedSpecialistLanes.join(", ")}`;
+  } else {
+    specialistFanoutStatus = "not_applicable";
+    specialistFanoutReason = `recommended specialist lanes were informational only: ${missingRecommendedSpecialistLanes.join(", ")}`;
   }
   const specialistFanoutObserved =
     specialistLaneExpected &&

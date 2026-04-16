@@ -268,7 +268,7 @@ xgc_prompt_permission_mode() {
 
   echo "Choose the default X for GitHub Copilot permission mode:" >&2
   echo "  ask  - prompt normally; safest default" >&2
-  echo "  work - pre-approve common write/git/gh/node/npm/pnpm/npx/tsx plus selected low-risk repo discovery commands and selected MCP work, with selected denies" >&2
+  echo "  work - pre-approve routine trusted-workspace development while denying selected high-risk shell commands" >&2
   echo "  yolo - pass --allow-all; fully unattended and least safe" >&2
   printf 'Default permission mode [%s]: ' "$default_mode" >&2
   read -r answer
@@ -474,62 +474,6 @@ install_global_xgc_main() {
   COPILOT_HOME="$profile_home" bash "$REPO_ROOT/scripts/use-xgc-env.sh" "$raw_copilot_bin" plugin install "$REPO_ROOT"
   COPILOT_HOME="$profile_home" bash "$REPO_ROOT/scripts/use-xgc-env.sh" "$raw_copilot_bin" plugin list
 
-  local shell_profile=""
-  shell_profile="$(xgc_detect_shell_profile_path "$(basename "${SHELL:-}")" "$HOME" || true)"
-  local source_command="source \"$config_home/xgc-shell.sh\""
-  local source_block
-  source_block="$(xgc_shell_source_block "$config_home")"
-
-  if [[ $legacy_skip_profile_source -eq 1 ]]; then
-    echo "--skip-profile-source is deprecated and now a no-op because shell profile writes are opt-in by default."
-  fi
-
-  if [[ $write_shell_profile -eq 1 ]]; then
-    xgc_write_shell_profile_block "$shell_profile" "$source_block" "$source_command"
-  else
-    xgc_preview_shell_profile_change "$shell_profile" "$source_block" "$source_command"
-  fi
-
-  echo "Global X for GitHub Copilot mode installed."
-  echo "Profile home: $profile_home"
-  echo "Config home: $config_home"
-  echo "Raw Copilot binary: $raw_copilot_bin"
-  echo "Permission mode: $permission_mode"
-  echo "Reasoning effort: $reasoning_effort"
-  echo "Reasoning effort cap: $reasoning_effort_cap"
-  echo
-  echo "Start using it:"
-  echo "  1. Open a new terminal, or run: exec zsh"
-  echo "  2. Run: copilot"
-  echo "  3. Optional: use /model inside Copilot if you want a different root model for this session"
-  echo
-  echo "Useful commands:"
-  echo "  copilot      - X for GitHub Copilot front door"
-  echo "  copilot_raw  - raw GitHub Copilot CLI without the XGC shim"
-  echo "  xgc_mode ask|work|yolo - change the current shell permission mode"
-  echo "  XGC_REASONING_EFFORT_CAP=xhigh copilot - allow xhigh on accounts that support it"
-  echo "  XGC_REASONING_EFFORT=off copilot - run without the default reasoning-effort injection"
-  echo
-  echo "Later, if you want raw Copilot again:"
-  if [[ $packaged_runtime -eq 1 ]]; then
-    echo "  xgc uninstall --disable-only"
-    echo "  xgc uninstall --reset-raw-config --clear-raw-state"
-    echo
-    echo "Installed-runtime maintenance commands:"
-    echo "  xgc doctor"
-    echo "  xgc update --check"
-    echo "  xgc update"
-    echo "  xgc status"
-  else
-    echo "  bash scripts/uninstall-global-xgc.sh --disable-only"
-    echo "  bash scripts/uninstall-global-xgc.sh --reset-raw-config --clear-raw-state"
-  fi
-  echo
-  echo "Verify shell activation in a new interactive shell, for example: zsh -ic 'type copilot; copilot --version'"
-  echo "Do not use 'zsh -l -c' as the activation check on macOS; .zshrc is interactive-shell startup state."
-  echo "Use 'copilot_raw' to bypass the X for GitHub Copilot shim after you source or reload your shell."
-  echo "Convenience wrappers: xgc, xgc_scout, xgc_plan, xgc_triage, xgc_patch, xgc_review, xgc_check"
-
   if [[ $run_runtime_validation -eq 1 ]]; then
     if [[ $packaged_runtime -eq 1 ]]; then
       echo "Skipping live runtime validation for packaged install; it requires repo-checkout dev tooling." >&2
@@ -548,6 +492,27 @@ install_global_xgc_main() {
       --repo-root "$REPO_ROOT" \
       --home-dir "$HOME"
   fi
+
+  local shell_profile=""
+  shell_profile="$(xgc_detect_shell_profile_path "$(basename "${SHELL:-}")" "$HOME" || true)"
+  local source_command="source \"$config_home/xgc-shell.sh\""
+  local source_block
+  source_block="$(xgc_shell_source_block "$config_home")"
+
+  if [[ $legacy_skip_profile_source -eq 1 ]]; then
+    echo "--skip-profile-source is deprecated and now a no-op because shell profile writes are opt-in by default."
+  fi
+
+  if [[ $write_shell_profile -eq 1 ]]; then
+    xgc_write_shell_profile_block "$shell_profile" "$source_block" "$source_command"
+  else
+    xgc_preview_shell_profile_change "$shell_profile" "$source_block" "$source_command"
+  fi
+
+  echo "Global X for GitHub Copilot mode installed."
+  echo
+  echo "1. Open a new terminal, then run: copilot"
+  echo "2. If XGC helps, please star the project: https://github.com/Juhwa-Lee1023/x-for-github-copilot"
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
