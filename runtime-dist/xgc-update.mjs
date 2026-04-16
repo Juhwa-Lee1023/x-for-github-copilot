@@ -342,52 +342,57 @@ async function main() {
     return;
   }
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "xgc-update-"));
-  const archivePath = path.join(tempRoot, "release.tgz");
-  await downloadFile(latestCompatible.tarballUrl, archivePath, "release tarball");
-  const expectedSha256 = await expectedSha256ForRelease(latestCompatible);
-  if (expectedSha256) {
+  try {
+    const archivePath = path.join(tempRoot, "release.tgz");
+    await downloadFile(latestCompatible.tarballUrl, archivePath, "release tarball");
+    const expectedSha256 = await expectedSha256ForRelease(latestCompatible);
+    if (!expectedSha256) {
+      throw new Error(`Release manifest checksum is required before applying ${latestCompatible.tag}`);
+    }
     const actualSha256 = sha256File(archivePath);
     if (actualSha256 !== expectedSha256) {
       throw new Error(`Release tarball checksum mismatch for ${latestCompatible.tag}`);
     }
-  }
-  validateTarballEntries(archivePath);
-  run("tar", ["-xzf", archivePath, "-C", tempRoot]);
-  const extractedDir = locateAndValidateExtractedPackage(tempRoot, latestCompatible.version);
-  print(`xgc update: applying ${currentVersion} -> ${latestCompatible.version}`, args.quiet);
-  run(
-    process.execPath,
-    [
-      path.join(extractedDir, "bin", "xgc.mjs"),
-      "install",
-      "--home-dir",
-      args.homeDir,
-      "--permission-mode",
-      installState.permissionMode || "ask",
-      "--reasoning-effort",
-      installState.reasoningEffort || "xhigh",
-      "--reasoning-effort-cap",
-      installState.reasoningEffortCap || "high",
-      "--no-write-shell-profile",
-      "--release-repo",
-      repo,
-      "--release-tag",
-      latestCompatible.tag,
-      "--update-track",
-      installState.updateTrack,
-      "--update-channel",
-      installState.updateChannel,
-      "--auto-update-mode",
-      backgroundMode
-    ],
-    {
-      cwd: extractedDir,
-      env: {
-        ...process.env,
-        XGC_SKIP_SELF_DISPATCH: "1"
+    validateTarballEntries(archivePath);
+    run("tar", ["-xzf", archivePath, "-C", tempRoot]);
+    const extractedDir = locateAndValidateExtractedPackage(tempRoot, latestCompatible.version);
+    print(`xgc update: applying ${currentVersion} -> ${latestCompatible.version}`, args.quiet);
+    run(
+      process.execPath,
+      [
+        path.join(extractedDir, "bin", "xgc.mjs"),
+        "install",
+        "--home-dir",
+        args.homeDir,
+        "--permission-mode",
+        installState.permissionMode || "ask",
+        "--reasoning-effort",
+        installState.reasoningEffort || "xhigh",
+        "--reasoning-effort-cap",
+        installState.reasoningEffortCap || "high",
+        "--no-write-shell-profile",
+        "--release-repo",
+        repo,
+        "--release-tag",
+        latestCompatible.tag,
+        "--update-track",
+        installState.updateTrack,
+        "--update-channel",
+        installState.updateChannel,
+        "--auto-update-mode",
+        backgroundMode
+      ],
+      {
+        cwd: extractedDir,
+        env: {
+          ...process.env,
+          XGC_SKIP_SELF_DISPATCH: "1"
+        }
       }
-    }
-  );
+    );
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
   const refreshed = readInstallState(paths);
   updateInstallState(paths, refreshed, {
     releaseRepo: repo,

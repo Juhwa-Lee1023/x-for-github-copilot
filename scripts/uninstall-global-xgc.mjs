@@ -119,6 +119,14 @@ function removeShellBlock(filePath) {
   return true;
 }
 
+function hasShellBlock(filePath) {
+  if (!fs.existsSync(filePath)) {
+    return false;
+  }
+  const content = fs.readFileSync(filePath, "utf8");
+  return content.includes("# >>> xgc global mode >>>") && content.includes("# <<< xgc global mode <<<");
+}
+
 function killBestEffort(pattern) {
   spawnSync("pkill", ["-f", pattern], { stdio: "ignore" });
 }
@@ -143,8 +151,9 @@ function main() {
   killBestEffort("xgc-update.mjs");
 
   for (const startupFile of [".zshrc", ".zprofile", ".bashrc", ".bash_profile"].map((file) => path.join(homeDir, file))) {
-    if (fs.existsSync(startupFile) && removeShellBlock(startupFile)) {
+    if (hasShellBlock(startupFile)) {
       backupCopy(startupFile, backupRoot);
+      removeShellBlock(startupFile);
     }
   }
 

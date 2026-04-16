@@ -144,6 +144,7 @@ function replaceSymlink(targetPath, destinationPath) {
   fs.rmSync(tempPath, { recursive: true, force: true });
   fs.mkdirSync(path.dirname(destinationPath), { recursive: true });
   fs.symlinkSync(targetPath, tempPath);
+  fs.rmSync(destinationPath, { recursive: true, force: true });
   fs.renameSync(tempPath, destinationPath);
 }
 
@@ -277,6 +278,10 @@ function parseInstallArgs(argv) {
 
   if (parsed.writeShellProfile && !parsed.passthroughArgs.includes("--write-shell-profile")) {
     parsed.passthroughArgs.unshift("--write-shell-profile");
+  }
+  if (!parsed.releaseTag && !parsed.passthroughArgs.includes("--release-tag")) {
+    parsed.releaseTag = packageVersion;
+    parsed.passthroughArgs.push("--release-tag", packageVersion);
   }
 
   return parsed;

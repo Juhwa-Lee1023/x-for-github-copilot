@@ -599,7 +599,14 @@ function samePluginRegistration(entry, pluginName, repoRoot) {
     return false;
   }
   const record = entry;
-  return record.name === pluginName || record.source?.path === repoRoot;
+  const sourcePath = record.source?.path ?? record.source?.source_path;
+  return record.name === pluginName || sourcePath === repoRoot;
+}
+function copilotPluginRegistrations(config) {
+  return [
+    ...Array.isArray(config?.installedPlugins) ? config.installedPlugins : [],
+    ...Array.isArray(config?.installed_plugins) ? config.installed_plugins : []
+  ];
 }
 function ensureDedicatedProfilePluginRegistration(opts) {
   const cachePath = path2.join(opts.paths.profileHome, "installed-plugins", "_direct", path2.basename(opts.repoRoot));
@@ -612,11 +619,12 @@ function ensureDedicatedProfilePluginRegistration(opts) {
   const repoVersion = readRepoPackageVersion(opts.repoRoot);
   const pluginName = sourcePluginJson?.name ?? cachedPluginJson?.name ?? "xgc";
   const pluginVersion = sourcePluginJson?.version ?? repoVersion ?? cachedPluginJson?.version;
-  const existingRegistrations = Array.isArray(opts.profileConfig.installed_plugins) ? opts.profileConfig.installed_plugins.filter((entry) => !samePluginRegistration(entry, pluginName, opts.repoRoot)) : [];
-  const existing = Array.isArray(opts.profileConfig.installed_plugins) ? opts.profileConfig.installed_plugins.find((entry) => samePluginRegistration(entry, pluginName, opts.repoRoot)) : void 0;
+  const pluginRegistrations = copilotPluginRegistrations(opts.profileConfig);
+  const existingRegistrations = pluginRegistrations.filter((entry) => !samePluginRegistration(entry, pluginName, opts.repoRoot));
+  const existing = pluginRegistrations.find((entry) => samePluginRegistration(entry, pluginName, opts.repoRoot));
   return {
     ...opts.profileConfig,
-    installed_plugins: [
+    installedPlugins: [
       ...existingRegistrations,
       {
         ...existing ?? {},
@@ -639,10 +647,11 @@ function buildGlobalProfileConfig(opts) {
     ...opts.existingProfileConfig ?? {},
     ...opts.baseConfig ?? {}
   };
+  delete source.installedPlugins;
   delete source.installed_plugins;
   delete source.model;
   delete source.effortLevel;
-  const existingInstalledPlugins = Array.isArray(opts.existingProfileConfig?.installed_plugins) ? opts.existingProfileConfig?.installed_plugins.filter((entry) => !filtersLegacyInstalledPlugin(entry)) : void 0;
+  const existingInstalledPlugins = copilotPluginRegistrations(opts.existingProfileConfig).filter((entry) => !filtersLegacyInstalledPlugin(entry));
   const trustedFolders = uniqueStrings([
     ...Array.isArray(source.trusted_folders) ? source.trusted_folders : [],
     opts.repoRoot
@@ -655,7 +664,7 @@ function buildGlobalProfileConfig(opts) {
     ...source,
     trusted_folders: trustedFolders,
     custom_agents: customAgents,
-    ...existingInstalledPlugins ? { installed_plugins: existingInstalledPlugins } : {}
+    ...existingInstalledPlugins.length > 0 ? { installedPlugins: existingInstalledPlugins } : {}
   };
 }
 async function materializeGlobalProfile(options) {

@@ -151,7 +151,7 @@ The global installer persists one default permission mode:
 - `ask`
   normal Copilot permission prompts
 - `work`
-  pre-approves common write, Git/GitHub CLI, Node/npm/pnpm/npx/tsx, selected low-risk repo discovery commands such as `rg`, `ls`, and `printf`, plus selected URL/tool usage while keeping selected deny rules; content-reading or rewriting helpers such as `cat`, `find`, `head`, `tail`, and `sed` still prompt because approvals are not repo-path-scoped
+  pre-approves routine trusted-workspace development: file writes, common read/search helpers, simple file organization, Git/GitHub CLI, Node/package-manager work, selected URL/tool usage, and selected deny rules for high-risk shell commands such as `rm`, `sudo`, `chmod`, `chown`, and `git push`
 - `yolo`
   passes `--allow-all`
 

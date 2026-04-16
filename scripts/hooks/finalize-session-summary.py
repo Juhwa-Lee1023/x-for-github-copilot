@@ -68,6 +68,7 @@ FIELD_ORDER = [
     "summary_route_heuristic_mismatch",
     "summary_route_count_mismatch",
     "summary_capability_count_mismatch",
+    "summary_capability_count_refreshed",
     "summary_timestamp_stale",
     "summary_finalization_status",
     "finalization_complete",
@@ -165,6 +166,8 @@ FIELD_ORDER = [
     "validation_observed",
     "validation_status",
     "validation_raw_status",
+    "validation_evidence_level",
+    "validation_search_only",
     "validation_overclaim_observed",
     "validation_command_failures",
     "validation_recovered_after_failures_observed",
@@ -510,6 +513,14 @@ def is_foundation_noise_line(line):
         or re.search(r"\bMCP server .* provided deferred instructions\b", line, re.IGNORECASE)
         or (
             re.search(r"\bLSP .*server\b", line, re.IGNORECASE)
+            and re.search(
+                r"\b(non-constant source not supported|error while parsing|failed to resolve path|unexpected token|syntax error)\b",
+                line,
+                re.IGNORECASE,
+            )
+        )
+        or (
+            re.search(r"\bLSP .*server\b", line, re.IGNORECASE)
             and re.search(r"/node_modules/", line, re.IGNORECASE)
             and re.search(r"\b(warning|error while parsing|unexpected token)\b", line, re.IGNORECASE)
         )
@@ -711,19 +722,25 @@ def summarize_specialist_fanout(
     elif len(module_hits) >= 2:
         large_score += 1
     large_product_build_task_observed = large_score >= 3
-    explicit_visual = bool(
-        re.search(r"\b(visual forge|visual-forge|visual-engineering)\b", scope_lower)
-        or (
-            re.search(
-                r"\b(ui|ux|frontend|css|layout|responsive|visual|design|accessibility|animation|motion|theme|light mode|dark mode|browser extension|chrome extension)\b|라이트모드|다크모드|크롬\s*익스텐션|테마",
-                scope_lower,
-            )
-            and not large_product_build_task_observed
+    visual_scope_observed = bool(
+        re.search(
+            r"\b(ui|ux|frontend|css|layout|responsive|visual|design|accessibility|animation|motion|theme|light mode|dark mode|browser extension|chrome extension)\b|라이트모드|다크모드|크롬\s*익스텐션|테마",
+            scope_lower,
         )
     )
-    explicit_writing = bool(
-        re.search(r"\b(writing desk|writing-desk)\b", scope_lower)
-        or (re.search(r"\b(docs?|documentation|readme|guide|onboarding|release notes?|migration notes?|changelog|technical writing|prose)\b", scope_lower) and not large_product_build_task_observed)
+    visual_required_scope_observed = bool(
+        re.search(
+            r"\b(?:polish|refine|audit|review)\b[\s\S]{0,80}\b(?:ui|ux|frontend|css|layout|responsive|visual|design|accessibility|animation|motion|spacing|hierarchy)\b"
+            r"|\b(?:fix|repair|resolve|debug)\b[\s\S]{0,80}\b(?:ui|ux|frontend|front-end|css|layout|responsive|visual|design|accessibility|theme|light mode|dark mode|browser extension|chrome extension)\b"
+            r"|\b(?:ui|ux|frontend|front-end|css|layout|responsive|visual|design|accessibility|theme|light mode|dark mode|browser extension|chrome extension)\b[\s\S]{0,80}\b(?:fix|repair|resolve|debug)\b"
+            r"|\bcreate\b[\s\S]{0,80}\bvisual\b"
+            r"|\b(?:ui/ux|visual hierarchy|design system|frontend polish|responsive ui layout|css spacing|animation|motion|accessibility)\b",
+            scope_lower,
+        )
+        or (
+            re.search(r"(?:라이트모드|다크모드|크롬\s*익스텐션|테마)", scope_lower)
+            and re.search(r"(?:해결|수정|고쳐|안되고|안\s*되고|적용이\s*안)", scope_lower)
+        )
     )
     explicit_multimodal = bool(
         not multimodal_requirement_suppressed(scope_lower)
@@ -732,6 +749,14 @@ def summarize_specialist_fanout(
             or re.search(r"\b(analy[sz]e|inspect|review|read|extract)\b[\s\S]{0,80}\b(screenshot|image|pdf|diagram|mockup|wireframe|photo|screen capture|visual artifact)\b", scope_lower)
             or re.search(r"\b(screenshot|image|pdf|diagram|mockup|wireframe|photo|screen capture|visual artifact)\b[\s\S]{0,80}\b(analy[sz]e|inspect|review|read|extract)\b", scope_lower)
         )
+    )
+    explicit_visual = bool(
+        re.search(r"\b(visual forge|visual-forge|visual-engineering)\b", scope_lower)
+        or (visual_required_scope_observed and not large_product_build_task_observed and not explicit_multimodal)
+    )
+    explicit_writing = bool(
+        re.search(r"\b(writing desk|writing-desk)\b", scope_lower)
+        or (re.search(r"\b(docs?|documentation|readme|guide|onboarding|release notes?|migration notes?|changelog|technical writing|prose)\b", scope_lower) and not large_product_build_task_observed)
     )
     explicit_artistry = bool(
         re.search(r"\b(artistry studio|artistry-studio)\b", scope_lower)
@@ -747,11 +772,13 @@ def summarize_specialist_fanout(
         [
             lane
             for lane, pattern in [
-                ("visual-forge", r"\b(ui|ux|frontend|css|layout|responsive|visual|design|accessibility)\b"),
+                ("visual-forge", r"\b(ui|ux|frontend|css|layout|responsive|visual|design|accessibility|theme|light mode|dark mode|browser extension|chrome extension)\b|라이트모드|다크모드|크롬\s*익스텐션|테마"),
                 ("writing-desk", r"\b(docs?|documentation|readme|architecture|validation|guide|tests?)\b"),
                 ("artistry-studio", r"\b(naming|tone|messaging|brand|creative|aesthetic)\b"),
             ]
-            if large_product_build_task_observed and re.search(pattern, scope_lower) and lane not in required_specialist_lanes
+            if (large_product_build_task_observed or (lane == "visual-forge" and visual_scope_observed))
+            and re.search(pattern, scope_lower)
+            and lane not in required_specialist_lanes
         ]
     )
     if single_session_scope_declared:
@@ -774,9 +801,6 @@ def summarize_specialist_fanout(
     specialist_fanout_covered_by_patch_master = bool(
         patch_master_swarm_observed and not missing_required_specialist_lanes and unobserved_recommended_specialist_lanes
     )
-    specialist_fanout_partial = bool(
-        (missing_required_specialist_lanes or (unobserved_recommended_specialist_lanes and not specialist_fanout_covered_by_patch_master))
-    )
     specialist_fanout_status = "not_applicable"
     specialist_fanout_reason = None
     if not specialist_lane_expected:
@@ -791,9 +815,13 @@ def summarize_specialist_fanout(
     elif specialist_fanout_covered_by_patch_master:
         specialist_fanout_status = "covered_by_patch_master_swarm"
         specialist_fanout_reason = f"recommended specialist lane(s) not observed but Patch Master swarm covered execution: {', '.join(unobserved_recommended_specialist_lanes)}"
-    elif unobserved_recommended_specialist_lanes:
+    elif unobserved_recommended_specialist_lanes and large_product_build_task_observed:
         specialist_fanout_status = "partial"
         specialist_fanout_reason = f"recommended specialist lane(s) were not observed: {', '.join(unobserved_recommended_specialist_lanes)}"
+    elif unobserved_recommended_specialist_lanes:
+        specialist_fanout_status = "not_applicable"
+        specialist_fanout_reason = f"recommended specialist lane(s) were informational only: {', '.join(unobserved_recommended_specialist_lanes)}"
+    specialist_fanout_partial = specialist_fanout_status in {"partial", "missing_required"}
 
     return {
         "large_product_build_task_observed": large_product_build_task_observed,
@@ -1183,6 +1211,15 @@ def is_expected_no_match_validation_command(command, description):
     )
 
 
+def is_exploratory_existing_search(description):
+    description_text = description.lower() if isinstance(description, str) else ""
+    if not description_text:
+        return False
+    if re.search(r"\b(required|must|should|verify|ensure|assert|expected|present|exists?)\b", description_text):
+        return False
+    return bool(re.search(r"\b(?:check|search|find|look\s+for|inspect)\s+(?:for\s+)?existing\b", description_text))
+
+
 def is_search_validation_command(command, description):
     if not is_search_command(command):
         return False
@@ -1197,6 +1234,8 @@ def is_search_validation_command(command, description):
         r"\b(validation|validate|check|verify|ensure|assert|confirm|test|required|exists?|present|expected|must|should)\b",
         description_text,
     )
+    if is_exploratory_existing_search(description):
+        return False
     if exploratory_description and not validation_description:
         return False
     return bool(
@@ -1357,7 +1396,7 @@ def collect_validation_evidence_text(events, process_log_text=""):
                         chunks.append(f"validation command failed: {label} found matches for an expected no-match check")
                         continue
                     if exit_code == 0 and is_search_validation_command(command, description):
-                        chunks.append(f"validation command passed: {label}")
+                        chunks.append(f"validation search check passed: {label}")
                         continue
                     if exit_code != 0 and is_search_validation_command(command, description):
                         chunks.append(f"validation command failed: {label} exited with exit code {exit_code}")
@@ -1368,6 +1407,17 @@ def collect_validation_evidence_text(events, process_log_text=""):
                     else:
                         chunks.append(f"validation command failed: {label} exited with exit code {exit_code}")
                     continue
+                filtered_values = []
+                for value in values:
+                    if not isinstance(value, str):
+                        continue
+                    filtered = "\n".join(
+                        line for line in value.splitlines() if not BARE_TOOL_EXIT_RE.match(line.strip())
+                    ).strip()
+                    if filtered:
+                        filtered_values.append(filtered)
+                chunks.extend(filtered_values)
+                continue
             chunks.extend(values)
     if process_log_text:
         chunks.append(process_log_text)
@@ -1430,6 +1480,17 @@ def parse_payload(raw):
             return nested
         return data
     return {}
+
+
+def is_safe_session_id(value):
+    if not isinstance(value, str):
+        return False
+    if re.fullmatch(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", value):
+        return True
+    # Test fixtures and synthetic local runs use readable hyphenated IDs.
+    # Reject bare process-group or marker strings such as `pgid`, which can
+    # otherwise create misleading session-state directories.
+    return bool("-" in value and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{5,}", value))
 
 
 def parse_iso(value):
@@ -1586,6 +1647,7 @@ def write_session_summary_text(file_path, data):
             f"Archive completeness: {data.get('archive_completeness') or 'unknown'}",
             f"Session outcome: {data.get('session_outcome') or 'unknown'}",
             f"Validation status: {data.get('validation_status') or 'unknown'}",
+            f"Validation evidence: {data.get('validation_evidence_level') or 'unknown'}",
             f"Route: {data.get('route_summary') or 'unobserved'}",
             f"Route source: {data.get('route_summary_source') or 'unknown'}",
             f"Execution owner: {data.get('execution_owner') or 'unknown'}",
@@ -1598,6 +1660,7 @@ def write_session_summary_text(file_path, data):
             f"Validation artifact files: {summary_count(data.get('validation_artifact_files'))}",
             f"Process log: {data.get('process_log') or 'unknown'}",
             "",
+            f"Warnings: {render_summary_list(session_summary_warnings(data))}",
             f"Authority reasons: {render_summary_list(data.get('summary_authority_reasons'))}",
             f"Archive reasons: {render_summary_list(data.get('archive_completeness_reasons'))}",
             f"Route agents: {render_summary_list(data.get('route_agents'))}",
@@ -1622,6 +1685,23 @@ def read_events(transcript_path):
         except Exception:
             continue
     return events
+
+
+def session_summary_warnings(data):
+    warnings = []
+    if data.get("summary_capability_count_mismatch"):
+        warnings.append("summary capability counts differ from raw/process truth")
+    if data.get("summary_route_count_mismatch"):
+        warnings.append("summary route counts differ from raw route truth")
+    if data.get("summary_timestamp_stale"):
+        warnings.append("summary timestamp is older than the latest raw event")
+    if data.get("validation_search_only"):
+        warnings.append("validation evidence is search-only; no test/build/runtime command was observed")
+    if data.get("validation_overclaim_observed"):
+        warnings.append("validation pass/fail evidence conflicts")
+    if data.get("session_shutdown_recovery_finalized"):
+        warnings.append("late session.shutdown evidence refreshed final state after terminal finalization")
+    return warnings
 
 
 def event_type_seen(events, event_type):
@@ -1708,6 +1788,12 @@ def build_agent_invocations(events):
         invocations.append({"agent_name": agent_name, "timestamp": timestamp})
         invocation_counts[agent_name] = invocation_counts.get(agent_name, 0) + 1
 
+    def flush_selected_front_door():
+        for selected_name, selected_timestamp in list(pending_selected.items()):
+            if selected_name == "Repo Master":
+                record(selected_name, selected_timestamp)
+                pending_selected.pop(selected_name, None)
+
     for entry in events:
         event_type = entry.get("type")
         if event_type not in {"subagent.selected", "subagent.started", "subagent.completed"}:
@@ -1720,28 +1806,36 @@ def build_agent_invocations(events):
 
         if event_type == "subagent.selected":
             if agent_name not in active and agent_name not in pending_selected:
-                record(agent_name, timestamp)
                 pending_selected[agent_name] = timestamp
             continue
 
         if event_type == "subagent.started":
             if agent_name in pending_selected:
+                if agent_name != "Repo Master":
+                    flush_selected_front_door()
+                record(agent_name, pending_selected.get(agent_name) or timestamp)
                 pending_selected.pop(agent_name, None)
                 active.add(agent_name)
                 continue
+            flush_selected_front_door()
+            pending_selected.clear()
             if agent_name not in active:
                 record(agent_name, timestamp)
                 active.add(agent_name)
             continue
 
         if agent_name in pending_selected:
+            record(agent_name, pending_selected.get(agent_name) or timestamp)
             pending_selected.pop(agent_name, None)
             continue
+        flush_selected_front_door()
+        pending_selected.clear()
         if agent_name not in active:
-            record(agent_name, pending_selected.get(agent_name) or timestamp)
+            record(agent_name, timestamp)
         active.discard(agent_name)
         pending_selected.pop(agent_name, None)
 
+    flush_selected_front_door()
     return invocations, invocation_counts
 
 
@@ -1872,6 +1966,9 @@ def summarize_runtime_models(events):
                 session_level_models.append(current_model)
                 if first_user_event_index is not None and index >= first_user_event_index:
                     post_prompt_models.append(current_model)
+
+    if session_current_model is None and model_changes:
+        session_current_model = model_changes[-1][1]
 
     observed_runtime_models = ordered_unique(collapse_consecutive(session_level_models))
     observed_agent_tool_models = ordered_unique(collapse_consecutive(agent_tool_models))
@@ -2638,6 +2735,19 @@ def collect_relative_files(root, threshold=None):
     return files
 
 
+def stable_session_state_files(files):
+    stable_files = []
+    for entry in files:
+        normalized = str(entry).strip().replace("\\", "/")
+        if not normalized:
+            continue
+        basename = normalized.rsplit("/", 1)[-1]
+        if re.match(r"^inuse\.\d+\.lock$", basename):
+            continue
+        stable_files.append(normalized)
+    return sorted(dict.fromkeys(stable_files))
+
+
 def useful_session_state_artifacts(files):
     useful_files = []
     baseline_files = {
@@ -2881,7 +2991,7 @@ def validation_failure_patterns():
 
 def validation_pass_patterns(strong=False):
     strong_patterns = [
-        re.compile(r"\b(no eslint warnings or errors|npm test passed|tests?\s+\d+\s+passed|test files?\s+\d+\s+passed|compiled successfully|build passed|validation passed|validation command passed|validation no-match check passed|smoke test passed|playwright.*\bpassed|all required validation commands passed)\b", re.IGNORECASE),
+        re.compile(r"\b(no eslint warnings or errors|npm test passed|tests?\s+\d+\s+passed|test files?\s+\d+\s+passed|compiled successfully|build passed|validation passed|validation command passed|smoke test passed|playwright.*\bpassed|all required validation commands passed)\b", re.IGNORECASE),
         re.compile(r"^\s*(?:✓\s*)?\d+\s+passed\b", re.IGNORECASE),
         re.compile(r"^\s*(?:\d+[\.)]\s*)?`?(?:npm install|npx prisma generate|npx prisma db push --force-reset|npm run seed|npm run lint|npm test|npm run build|npx playwright test)`?\s*(?:✅|passed)\s*$", re.IGNORECASE),
         re.compile(r"^\s*all passed\.?\s*$", re.IGNORECASE),
@@ -2889,6 +2999,7 @@ def validation_pass_patterns(strong=False):
     if strong:
         return strong_patterns
     return strong_patterns + [
+        re.compile(r"\b(validation search check passed|validation no-match check passed)\b", re.IGNORECASE),
         re.compile(r"\b(validation_exit\s*[:=]\s*0|validation_state\s*[:=]\s*done|state=done)\b", re.IGNORECASE),
     ]
 
@@ -2922,6 +3033,7 @@ def validation_signal_noise_line(line):
         )
         or re.search(r"\bFailed to load memories for prompt:\s*Error:\s*GitHub repository name is required\b", line, re.IGNORECASE)
         or re.search(r"\b(Command failed with exit code 128:\s*)?git rev-parse HEAD\b", line, re.IGNORECASE)
+        or non_validation_command_failure_line(line)
         or re.search(r"\bFailed to get current commit hash\b", line, re.IGNORECASE)
         or re.search(r"\bMCP transport for .* closed\b", line, re.IGNORECASE)
         or re.search(r"\bTransient error connecting to HTTP server .*\bfetch failed\b", line, re.IGNORECASE)
@@ -2930,6 +3042,16 @@ def validation_signal_noise_line(line):
         or re.search(r"\bMCP client for .* connected\b", line, re.IGNORECASE)
         or re.search(r"\bStarted MCP client for remote server\b", line, re.IGNORECASE)
         or re.search(r"\bGitHub MCP server configured after authentication\b", line, re.IGNORECASE)
+    )
+
+
+def non_validation_command_failure_line(line):
+    return bool(
+        re.search(
+            r"\bCommand failed with exit code\s+[1-9]\s*:\s*(?:git\s+(?:add|commit|status|diff|checkout|restore|reset|rm|mv)|zip|tar|cp|mv|rm|mkdir|ls|find|grep|rg)\b",
+            line,
+            re.IGNORECASE,
+        )
     )
 
 
@@ -2944,7 +3066,7 @@ def validation_checkmark_result_line(line):
 
 
 def validation_structured_result_line(line):
-    return bool(re.search(r"^\s*validation\s+(?:command|no-match check)\s+(?:passed|failed)\b", line, re.IGNORECASE))
+    return bool(re.search(r"^\s*validation\s+(?:command|search check|no-match check)\s+(?:passed|failed)\b", line, re.IGNORECASE))
 
 
 def validation_retrospective_failure_note_line(line):
@@ -2977,6 +3099,34 @@ def validation_failure_lines(text):
     return ordered_unique(failures)
 
 
+def validation_evidence_level(pass_lines, failure_lines=None):
+    lines = [str(line) for line in (pass_lines or []) + (failure_lines or []) if isinstance(line, str) and line.strip()]
+    if not lines:
+        return "not-observed"
+    text = "\n".join(lines)
+    runtime = re.search(
+        r"\b(playwright|browser|e2e|smoke test|runtime|manual verification|manual runtime|npm test|vitest|test files?\s+\d+\s+passed|tests?\s+\d+\s+passed)\b",
+        text,
+        re.IGNORECASE,
+    )
+    structural = re.search(
+        r"\b(node\s+--check|git\s+(?:--no-pager\s+)?diff\s+--check|eslint|typecheck|tsc|npm run lint|npm run typecheck|compiled successfully|build passed|npm run build|syntax(?:\s+and\s+diff)?\s+checks?|diff\s+checks?)\b",
+        text,
+        re.IGNORECASE,
+    )
+    search_only = all(
+        re.search(r"\b(validation search check passed|validation no-match check passed)\b", line, re.IGNORECASE)
+        for line in lines
+    )
+    if runtime:
+        return "runtime"
+    if structural:
+        return "structural"
+    if search_only:
+        return "search-only"
+    return "command"
+
+
 def summarize_validation_status(text):
     validation_observed = bool(
         re.search(r"\b(validation_exit\s*[:=]\s*0|validation_state\s*[:=]\s*done|state=done)\b", text, re.IGNORECASE)
@@ -2988,6 +3138,8 @@ def summarize_validation_status(text):
             "validation_observed": False,
             "validation_status": "not-observed",
             "validation_raw_status": "not-observed",
+            "validation_evidence_level": "not-observed",
+            "validation_search_only": False,
             "validation_overclaim_observed": False,
             "validation_command_failures": [],
         }
@@ -2996,6 +3148,8 @@ def summarize_validation_status(text):
     pass_signals = validation_signal_lines(text, validation_pass_patterns())
     strong_pass_signals = validation_signal_lines(text, validation_pass_patterns(strong=True))
     command_failures = ordered_unique([signal["line"] for signal in failure_signals])
+    pass_lines = ordered_unique([signal["line"] for signal in pass_signals])
+    evidence_level = validation_evidence_level(pass_lines, command_failures)
     failed = len(command_failures) > 0
     passed = len(pass_signals) > 0
     last_failure_index = max([signal["index"] for signal in failure_signals], default=-1)
@@ -3023,6 +3177,8 @@ def summarize_validation_status(text):
             "validation_observed": True,
             "validation_status": "failed",
             "validation_raw_status": "failed",
+            "validation_evidence_level": evidence_level,
+            "validation_search_only": evidence_level == "search-only",
             "validation_overclaim_observed": validation_overclaim_observed,
             "validation_command_failures": command_failures,
             "validation_recovered_after_failures_observed": False,
@@ -3035,6 +3191,8 @@ def summarize_validation_status(text):
             "validation_observed": True,
             "validation_status": "passed",
             "validation_raw_status": "failed" if recovered else "passed",
+            "validation_evidence_level": evidence_level,
+            "validation_search_only": evidence_level == "search-only",
             "validation_overclaim_observed": False,
             "validation_command_failures": [],
             "validation_recovered_after_failures_observed": recovered,
@@ -3045,6 +3203,8 @@ def summarize_validation_status(text):
         "validation_observed": True,
         "validation_status": "observed-unknown",
         "validation_raw_status": "observed-unknown",
+        "validation_evidence_level": evidence_level,
+        "validation_search_only": evidence_level == "search-only",
         "validation_overclaim_observed": False,
         "validation_command_failures": [],
         "validation_recovered_after_failures_observed": False,
@@ -3058,6 +3218,8 @@ def summarize_validation_artifact_status(cwd, validation_artifact_files):
         return {
             "validation_observed": False,
             "validation_status": "not-observed",
+            "validation_evidence_level": "not-observed",
+            "validation_search_only": False,
             "validation_source": None,
             "validation_command_failures": [],
         }
@@ -3089,6 +3251,8 @@ def summarize_validation_artifact_status(cwd, validation_artifact_files):
         return {
             "validation_observed": True,
             "validation_status": "failed" if failures else "passed",
+            "validation_evidence_level": "artifact",
+            "validation_search_only": False,
             "validation_source": "validation-results-env",
             "validation_command_failures": failures,
         }
@@ -3097,12 +3261,16 @@ def summarize_validation_artifact_status(cwd, validation_artifact_files):
         return {
             "validation_observed": True,
             "validation_status": "failed" if failures else "passed",
+            "validation_evidence_level": "artifact",
+            "validation_search_only": False,
             "validation_source": "validation-log-exit-codes",
             "validation_command_failures": failures,
         }
     return {
         "validation_observed": False,
         "validation_status": "not-observed",
+        "validation_evidence_level": "not-observed",
+        "validation_search_only": False,
         "validation_source": None,
         "validation_command_failures": [],
     }
@@ -3118,6 +3286,8 @@ def merge_validation_summaries(raw_summary, artifact_summary):
             "validation_observed": True,
             "validation_status": "passed",
             "validation_raw_status": raw_summary.get("validation_status") or "observed-unknown",
+            "validation_evidence_level": "artifact",
+            "validation_search_only": False,
             "validation_overclaim_observed": False,
             "validation_command_failures": [],
             "validation_recovered_after_failures_observed": bool(raw_failed or raw_failures),
@@ -3130,6 +3300,8 @@ def merge_validation_summaries(raw_summary, artifact_summary):
             "validation_observed": True,
             "validation_status": "failed",
             "validation_raw_status": raw_summary.get("validation_status") or "observed-unknown",
+            "validation_evidence_level": "artifact",
+            "validation_search_only": False,
             "validation_overclaim_observed": raw_summary.get("validation_overclaim_observed", False),
             "validation_command_failures": ordered_unique(artifact_failures + raw_failures),
             "validation_recovered_after_failures_observed": False,
@@ -3607,7 +3779,7 @@ def main():
     event_name = sys.argv[1] if len(sys.argv) > 1 else ""
     payload = parse_payload(sys.stdin.read())
     session_id = payload.get("sessionId")
-    if not isinstance(session_id, str) or not session_id:
+    if not is_safe_session_id(session_id):
         return
 
     transcript_path_value = payload.get("transcriptPath")
@@ -3766,7 +3938,7 @@ def main():
             [f"playwright-report/{entry}" for entry in collect_relative_files(workspace_root / "playwright-report", validation_threshold)]
         )
     session_state_files.extend(collect_relative_files(session_dir))
-    session_state_files = sorted(dict.fromkeys(session_state_files))
+    session_state_files = stable_session_state_files(session_state_files)
     validation_artifact_files = sorted(dict.fromkeys(validation_artifact_files))
     repo_code_files = sorted(dict.fromkeys(repo_working_tree_files + committed_repo_files))
     if repo_code_files and route_summary.get("patch_master_handoff_without_completion_observed"):
@@ -3821,25 +3993,38 @@ def main():
         "github_capability_cache_hits",
         "github_capability_cache_misses",
     ]
-    data["summary_capability_count_mismatch"] = any(
-        isinstance(data.get(key), int) and data.get(key) != probe_summary.get(key)
+    previous_capability_counts = {
+        key: data.get(key)
         for key in capability_count_keys
-    )
+        if isinstance(data.get(key), int)
+    }
     current_updated_at = parse_iso(data.get("updated_at"))
     data["summary_timestamp_stale"] = bool(latest_event_dt and current_updated_at and current_updated_at < latest_event_dt)
+    terminal_success_already_finalized = bool(
+        shutdown_recovery_event
+        and data.get("final_status") == "completed"
+        and data.get("summary_finalization_status") == "finalized"
+        and (not data.get("stop_reason") or data.get("stop_reason") == "end_turn")
+        and not route_summary.get("routine_shutdown_during_open_turn_observed")
+    )
     if terminal_finalization_event:
         data["final_status"] = "completed" if stop_reason == "end_turn" else "stopped"
         if stop_reason:
             data["stop_reason"] = stop_reason
         data["summary_finalization_status"] = "finalized" if stop_reason == "end_turn" else "stopped"
     elif shutdown_recovery_event and shutdown_observed:
-        data["final_status"] = "stopped"
-        shutdown_type = route_summary.get("session_shutdown_type")
-        if stop_reason and stop_reason != "end_turn":
-            data["stop_reason"] = stop_reason
+        if terminal_success_already_finalized:
+            data["final_status"] = "completed"
+            data["stop_reason"] = "end_turn"
+            data["summary_finalization_status"] = "finalized"
         else:
-            data["stop_reason"] = f"session_shutdown_{shutdown_type}" if isinstance(shutdown_type, str) and shutdown_type else "session_shutdown"
-        data["summary_finalization_status"] = "stopped"
+            data["final_status"] = "stopped"
+            shutdown_type = route_summary.get("session_shutdown_type")
+            if stop_reason and stop_reason != "end_turn":
+                data["stop_reason"] = stop_reason
+            else:
+                data["stop_reason"] = f"session_shutdown_{shutdown_type}" if isinstance(shutdown_type, str) and shutdown_type else "session_shutdown"
+            data["summary_finalization_status"] = "stopped"
     elif event_name == "errorOccurred":
         data["final_status"] = "error"
         data["summary_finalization_status"] = "error"
@@ -3887,6 +4072,15 @@ def main():
     data.update(agent_model_policy_mismatch_summary)
     data["agent_model_policy_mismatch_authority_downgrade"] = should_downgrade_authority_for_agent_model_policy(data)
     data.update(probe_summary)
+    data["summary_capability_count_mismatch"] = any(
+        isinstance(data.get(key), int) and data.get(key) != probe_summary.get(key)
+        for key in capability_count_keys
+    )
+    data["summary_capability_count_refreshed"] = bool(
+        previous_capability_counts
+        and any(previous_capability_counts.get(key) != probe_summary.get(key) for key in previous_capability_counts)
+        and not data["summary_capability_count_mismatch"]
+    )
     data.update(github_repo_identity_signals)
     data["session_start_head"] = session_start_head
     data["session_start_head_source"] = session_start_head_source

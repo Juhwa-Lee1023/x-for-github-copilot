@@ -18,6 +18,7 @@ import {
   extractObservedSessionModels,
   summarizeAgentModelPolicyMismatches,
   extractCliReportedUsage,
+  extractObservedSubagentEvents,
   extractObservedSubagentNames,
   summarizeRouteObservations,
   summarizeObservedSessionModels,
@@ -263,6 +264,21 @@ test("validation log summary ignores task prompt text unless validation evidence
   assert.deepEqual(summary.validationCommandFailures, []);
 });
 
+test("validation log summary ignores ignored git add bare exit output", () => {
+  const summary = summarizeValidationLog(
+    [
+      "The following paths are ignored by one of your .gitignore files:",
+      "dist/away-alert-release.zip",
+      "hint: Use -f if you really want to add them.",
+      "<exited with exit code 1>"
+    ].join("\n")
+  );
+
+  assert.equal(summary.validationObserved, false);
+  assert.equal(summary.validationStatus, "not-observed");
+  assert.deepEqual(summary.validationCommandFailures, []);
+});
+
 test("validation log summary still detects real seed failures from command output", () => {
   const summary = summarizeValidationLog(
     [
@@ -488,6 +504,36 @@ test("inspectInstalledPlugin also supports direct COPILOT_HOME config dirs", () 
   assert.equal(evidence.registeredInConfig, true);
   assert.equal(evidence.configPath, path.join(configDir, "config.json"));
   assert.equal(evidence.cachePathExists, true);
+});
+
+test("inspectInstalledPlugin accepts current Copilot installedPlugins config shape", () => {
+  const configDir = fs.mkdtempSync(path.join(os.tmpdir(), "xgc-config-modern-plugin-"));
+  const sourcePath = path.join(configDir, "runtime-source");
+  const cachePath = path.join(configDir, "installed-plugins", "_direct", "0.1.1");
+  fs.mkdirSync(cachePath, { recursive: true });
+
+  fs.writeFileSync(
+    path.join(configDir, "config.json"),
+    JSON.stringify(
+      {
+        installedPlugins: [
+          {
+            name: "xgc",
+            source: { source: "local", path: sourcePath },
+            cache_path: cachePath
+          }
+        ]
+      },
+      null,
+      2
+    )
+  );
+
+  const evidence = inspectInstalledPlugin("xgc", { homeDir: configDir, sourcePath });
+  assert.equal(evidence.registeredInConfig, true);
+  assert.equal(evidence.cachedPluginPath, cachePath);
+  assert.equal(evidence.cachePathExists, true);
+  assert.equal(evidence.notes.length, 0);
 });
 
 test("buildMcpStates reports selected-but-not-configured drift explicitly", () => {
@@ -773,6 +819,18 @@ test("summarizeObservedSessionModels treats /model command before prompt as sele
   assert.equal(summary.modelMismatch.observed, false);
 });
 
+test("summarizeObservedSessionModels uses latest model_change as current model before shutdown lands", () => {
+  const stdout = [
+    JSON.stringify({ type: "session.model_change", data: { previousModel: "claude-sonnet-4.6", newModel: "claude-opus-4.6" } }),
+    JSON.stringify({ type: "user.message", data: { content: "Review this session" } })
+  ].join("\n");
+
+  const summary = summarizeObservedSessionModels(stdout);
+  assert.equal(summary.requestedRuntimeModel, "claude-opus-4.6");
+  assert.equal(summary.sessionCurrentModel, "claude-opus-4.6");
+  assert.deepEqual(summary.observedRuntimeModels, ["claude-opus-4.6"]);
+});
+
 test("extractObservedSessionModels ignores non-record model metrics", () => {
   const stdout = JSON.stringify({
     type: "session.shutdown",
@@ -845,6 +903,21 @@ test("summarizeValidationLog ignores background agent wait progress as validatio
   assert.deepEqual(summary.validationCommandFailures, []);
 });
 
+test("summarizeValidationLog ignores non-validation git add failures", () => {
+  const summary = summarizeValidationLog(
+    [
+      "2026-04-15T09:00:00.000Z [ERROR] Command failed with exit code 1: git add dist/away-alert-release.zip",
+      "The following paths are ignored by one of your .gitignore files:",
+      "dist/away-alert-release.zip",
+      "<exited with exit code 1>"
+    ].join("\n")
+  );
+
+  assert.equal(summary.validationObserved, false);
+  assert.equal(summary.validationStatus, "not-observed");
+  assert.deepEqual(summary.validationCommandFailures, []);
+});
+
 test("summarizeValidationLog ignores transient MCP connection noise after validation success", () => {
   const summary = summarizeValidationLog(
     [
@@ -874,6 +947,20 @@ test("summarizeValidationLog treats expected search no-match probes as validatio
       "<exited with exit code 1>",
       "validation no-match check passed: Check removed body theme classes",
       "validation command passed: Run JS syntax and diff checks"
+    ].join("\n")
+  );
+
+  assert.equal(summary.validationObserved, true);
+  assert.equal(summary.validationStatus, "passed");
+  assert.equal(summary.validationOverclaimObserved, false);
+  assert.deepEqual(summary.validationCommandFailures, []);
+});
+
+test("summarizeValidationLog recognizes generated search-check pass labels", () => {
+  const summary = summarizeValidationLog(
+    [
+      "validation search check passed: Check existing theme selectors",
+      "No other validation commands were needed for this scoped search."
     ].join("\n")
   );
 
@@ -1143,6 +1230,44 @@ test("summarizeRouteObservations treats narrow visual work as requiring Visual F
   assert.equal(route.specialistFanoutStatus, "missing_required");
 });
 
+test("summarizeRouteObservations treats dark/light extension bugfix as required visual scope", () => {
+  const route = summarizeRouteObservations({
+    agentId: "repo-master",
+    agentLane: "front-door",
+    caseId: "direct-theme-bugfix",
+    promptText: "현재 크롬 익스텐션에서 라이트모드 / 다크모드가 정상동작하지않는데 수정해줘",
+    observedSubagents: ["Repo Master"],
+    observedSubagentCounts: { "Repo Master": 1 },
+    stdout: ""
+  });
+
+  assert.equal(route.largeProductBuildTaskObserved, false);
+  assert.deepEqual(route.requiredSpecialistLanes, ["visual-forge"]);
+  assert.deepEqual(route.recommendedSpecialistLanes, []);
+  assert.deepEqual(route.missingRequiredSpecialistLanes, ["visual-forge"]);
+  assert.deepEqual(route.missingRecommendedSpecialistLanes, []);
+  assert.equal(route.specialistFanoutStatus, "missing_required");
+  assert.equal(route.specialistFanoutPartial, true);
+});
+
+test("summarizeRouteObservations ignores home-level bash LSP parser warnings as foundation noise", () => {
+  const route = summarizeRouteObservations({
+    agentId: "repo-master",
+    agentLane: "front-door",
+    caseId: "home-bash-lsp-noise",
+    observedSubagents: ["Repo Master"],
+    observedSubagentCounts: { "Repo Master": 1 },
+    stdout: [
+      "LSP bash-language-server server for /Users/1004896: WARNING file:///Users/1004896/copilot-pure-backup/xgc/xgc-shell.sh line 224: non-constant source not supported",
+      "LSP bash-language-server server for /Users/1004896: Error while parsing file:///Users/1004896/.zshrc: syntax error",
+      "LSP bash-language-server server for /Users/1004896: failed to resolve path file:///Users/1004896/missing.sh"
+    ].join("\n")
+  });
+
+  assert.deepEqual(route.foundationFailureClasses, []);
+  assert.equal(route.appFoundationFailureObserved, false);
+});
+
 test("summarizeRouteObservations does not count selected-only specialist lanes as executed fanout", () => {
   const route = summarizeRouteObservations({
     agentId: "repo-master",
@@ -1161,6 +1286,48 @@ test("summarizeRouteObservations does not count selected-only specialist lanes a
   assert.deepEqual(route.observedSpecialistLanes, []);
   assert.deepEqual(route.missingRequiredSpecialistLanes, ["visual-forge"]);
   assert.equal(route.specialistFanoutStatus, "missing_required");
+});
+
+test("summarizeRouteObservations does not leak selected-only agents into route when another agent starts", () => {
+  const route = summarizeRouteObservations({
+    agentId: "repo-master",
+    agentLane: "front-door",
+    caseId: "selected-visual-started-patch",
+    promptText: "Use Visual Forge to polish the responsive UI layout, then implement the CSS fix.",
+    observedSubagents: [],
+    observedSubagentCounts: {},
+    observedSubagentEvents: [
+      { agentName: "Visual Forge", kind: "selected", source: "stdout", timestampMs: Date.parse("2026-04-15T01:00:00Z") },
+      { agentName: "Patch Master", kind: "started", source: "stdout", timestampMs: Date.parse("2026-04-15T01:00:01Z") }
+    ],
+    stdout: ""
+  });
+
+  assert.deepEqual(route.routeAgents, ["Patch Master"]);
+  assert.deepEqual(route.observedSpecialistLanes, []);
+  assert.deepEqual(route.missingRequiredSpecialistLanes, ["visual-forge"]);
+});
+
+test("summarizeRouteObservations preserves front-door order before selected-and-started specialists", () => {
+  const route = summarizeRouteObservations({
+    agentId: "repo-master",
+    agentLane: "front-door",
+    caseId: "selected-front-door-started-visual",
+    promptText: "Use Visual Forge to fix the dark mode extension styling bug.",
+    observedSubagents: [],
+    observedSubagentCounts: {},
+    observedSubagentEvents: [
+      { agentName: "Repo Master", kind: "selected", source: "stdout", timestampMs: Date.parse("2026-04-16T01:00:00Z") },
+      { agentName: "Visual Forge", kind: "selected", source: "stdout", timestampMs: Date.parse("2026-04-16T01:00:01Z") },
+      { agentName: "Visual Forge", kind: "started", source: "stdout", timestampMs: Date.parse("2026-04-16T01:00:02Z") }
+    ],
+    stdout: ""
+  });
+
+  assert.deepEqual(route.routeAgents, ["Repo Master", "Visual Forge"]);
+  assert.equal(route.routeSummary, "Repo Master -> Visual Forge");
+  assert.deepEqual(route.observedSpecialistLanes, ["visual-forge"]);
+  assert.deepEqual(route.missingRequiredSpecialistLanes, []);
 });
 
 test("summarizeRouteObservations scopes specialist fanout to explicit prompt over stale broad transcript", () => {
@@ -1343,6 +1510,27 @@ test("summarizeRouteObservations does not recommend Multimodal Look for asset-on
   assert.equal(route.specialistFanoutStatus, "covered_by_patch_master_swarm");
 });
 
+test("summarizeRouteObservations requires Visual Forge for narrow Korean dark-mode extension fixes", () => {
+  const route = summarizeRouteObservations({
+    agentId: "repo-master",
+    agentLane: "front-door",
+    caseId: "awayalert-dark-mode-fix",
+    promptText: "현재 크롬 익스텐션에서 다크모드/라이트모드 적용이 안되고 있는데 이 문제를 해결하여서 수정해줘",
+    observedSubagents: ["Repo Master"],
+    observedSubagentCounts: { "Repo Master": 1 },
+    stdout: [
+      JSON.stringify({ type: "session.start", timestamp: "2026-04-15T09:00:00.000Z" }),
+      JSON.stringify({ type: "subagent.selected", timestamp: "2026-04-15T09:00:01.000Z", data: { agentDisplayName: "Repo Master" } }),
+      JSON.stringify({ type: "tool.execution_start", timestamp: "2026-04-15T09:00:02.000Z", data: { toolName: "edit" } })
+    ].join("\n")
+  });
+
+  assert.equal(route.specialistLaneExpected, true);
+  assert.deepEqual(route.requiredSpecialistLanes, ["visual-forge"]);
+  assert.deepEqual(route.missingRequiredSpecialistLanes, ["visual-forge"]);
+  assert.equal(route.specialistFanoutStatus, "missing_required");
+});
+
 test("summarizeRouteObservations ignores noisy multimodal words outside the user scope", () => {
   const route = summarizeRouteObservations({
     agentId: "repo-master",
@@ -1357,7 +1545,9 @@ test("summarizeRouteObservations ignores noisy multimodal words outside the user
   });
 
   assert.equal(route.largeProductBuildTaskObserved, false);
-  assert.deepEqual(route.requiredSpecialistLanes, []);
+  assert.deepEqual(route.requiredSpecialistLanes, ["visual-forge"]);
+  assert.deepEqual(route.missingRequiredSpecialistLanes, ["visual-forge"]);
+  assert.ok(!route.requiredSpecialistLanes.includes("multimodal-look"));
   assert.equal(route.patchMasterSwarmObserved, true);
 });
 
@@ -1375,6 +1565,24 @@ test("summarizeRouteObservations still requires Multimodal Look when one artifac
   assert.deepEqual(route.requiredSpecialistLanes, ["multimodal-look"]);
   assert.deepEqual(route.missingRequiredSpecialistLanes, ["multimodal-look"]);
   assert.equal(route.specialistFanoutCoveredByPatchMaster, false);
+  assert.equal(route.specialistFanoutStatus, "missing_required");
+});
+
+test("summarizeRouteObservations keeps Visual Forge recommended for multimodal artifact analysis plus UI fix scope", () => {
+  const route = summarizeRouteObservations({
+    agentId: "repo-master",
+    agentLane: "front-door",
+    caseId: "screenshot-plus-dark-mode-fix",
+    promptText: "Analyze this screenshot, then fix the Chrome extension dark mode UI bug and verify the layout.",
+    observedSubagents: ["Repo Master", "Patch Master"],
+    observedSubagentCounts: { "Patch Master": 1 },
+    stdout: ""
+  });
+
+  assert.deepEqual(route.requiredSpecialistLanes, ["multimodal-look"]);
+  assert.deepEqual(route.recommendedSpecialistLanes, ["visual-forge"]);
+  assert.deepEqual(route.missingRequiredSpecialistLanes, ["multimodal-look"]);
+  assert.deepEqual(route.missingRecommendedSpecialistLanes, ["visual-forge"]);
   assert.equal(route.specialistFanoutStatus, "missing_required");
 });
 
@@ -1437,6 +1645,42 @@ test("summarizeRouteObservations recovers direct raw Copilot tool execution when
   assert.equal(route.sessionShutdownLinesAdded, 50);
   assert.equal(route.sessionShutdownLinesRemoved, 4);
   assert.equal(route.routeConfidence, "strong-indirect");
+});
+
+test("summarizeRouteObservations preserves selected-only front door plus direct tools", () => {
+  const stdout = [
+    JSON.stringify({ type: "session.start", timestamp: "2026-04-12T06:00:00.000Z" }),
+    JSON.stringify({ type: "subagent.selected", timestamp: "2026-04-12T06:00:02.000Z", data: { agentDisplayName: "Repo Master" } }),
+    JSON.stringify({ type: "tool.execution_start", timestamp: "2026-04-12T06:01:00.000Z", data: { toolName: "bash" } }),
+    JSON.stringify({ type: "tool.execution_start", timestamp: "2026-04-12T06:02:00.000Z", data: { toolName: "apply_patch" } }),
+    JSON.stringify({
+      type: "session.shutdown",
+      timestamp: "2026-04-12T06:05:00.000Z",
+      data: {
+        codeChanges: {
+          linesAdded: 50,
+          linesRemoved: 4,
+          filesModified: ["app/page.tsx", "package.json"]
+        }
+      }
+    })
+  ].join("\n");
+  const observedSubagentEvents = extractObservedSubagentEvents(stdout, "");
+  const route = summarizeRouteObservations({
+    agentId: "repo-master",
+    agentLane: "front-door",
+    observedSubagents: extractObservedSubagentNames(stdout, ""),
+    observedSubagentEvents,
+    observedSubagentCounts: { "Repo Master": 1 },
+    stdout
+  });
+
+  assert.deepEqual(route.routeAgents, ["Repo Master"]);
+  assert.equal(route.routeSummary, "Repo Master");
+  assert.equal(route.routeSummarySource, "started_with_fallbacks");
+  assert.equal(route.directToolExecutionObserved, true);
+  assert.equal(route.toolExecutionCount, 2);
+  assert.equal(route.writeToolCount, 1);
 });
 
 test("summarizeRouteObservations labels shutdown-only direct sessions without claiming tool-event provenance", () => {

@@ -138,15 +138,20 @@ function inspectInstalledPlugin(pluginName, opts = {}) {
       notes
     };
   }
-  const matchingEntry = config.installed_plugins?.find((entry) => {
+  const installedPlugins = [
+    ...Array.isArray(config.installedPlugins) ? config.installedPlugins : [],
+    ...Array.isArray(config.installed_plugins) ? config.installed_plugins : []
+  ];
+  const matchingEntry = installedPlugins.find((entry) => {
     if (entry.name === pluginName) return true;
-    if (opts.sourcePath && entry.source?.source_path) {
-      return path.resolve(entry.source.source_path) === path.resolve(opts.sourcePath);
+    const entrySourcePath = entry.source?.source_path ?? entry.source?.path;
+    if (opts.sourcePath && entrySourcePath) {
+      return path.resolve(entrySourcePath) === path.resolve(opts.sourcePath);
     }
     return false;
   }) ?? null;
   if (!matchingEntry) {
-    notes.push(`plugin was not found in installed_plugins for ${configPath}`);
+    notes.push(`plugin was not found in installedPlugins/installed_plugins for ${configPath}`);
     return {
       configPath,
       registeredInConfig: false,
@@ -412,9 +417,15 @@ function resolvePluginHookManifest(cachePath) {
   const fallback = path4.join(resolvedCachePath, "hooks", "hooks.json");
   return fs2.existsSync(fallback) ? fallback : null;
 }
+function copilotPluginEntries(config) {
+  return [
+    ...Array.isArray(config?.installedPlugins) ? config.installedPlugins : [],
+    ...Array.isArray(config?.installed_plugins) ? config.installed_plugins : []
+  ];
+}
 function pluginLooksLegacy(entry) {
   const name = (entry.name ?? "").toLowerCase();
-  const sourcePath = (entry.source?.source_path ?? "").replace(/\\/g, "/").toLowerCase();
+  const sourcePath = (entry.source?.source_path ?? entry.source?.path ?? "").replace(/\\/g, "/").toLowerCase();
   const cachePath = (entry.cache_path ?? "").replace(/\\/g, "/").toLowerCase();
   const knownPluginNames = /* @__PURE__ */ new Set([
     "xgc",
@@ -430,9 +441,10 @@ function findLegacyHookPluginConflicts(opts = {}) {
   const homeDir = opts.homeDir ? path4.resolve(opts.homeDir) : os2.homedir();
   const configPath = resolveCopilotConfigPath(homeDir, opts.configPath);
   const config = readJsonIfExists2(configPath);
-  if (!Array.isArray(config?.installed_plugins)) return [];
+  const pluginEntries = copilotPluginEntries(config);
+  if (pluginEntries.length === 0) return [];
   const conflicts = [];
-  for (const entry of config.installed_plugins) {
+  for (const entry of pluginEntries) {
     if (entry.enabled === false) continue;
     const pluginName = entry.name ?? "<unnamed-plugin>";
     const cachePath = entry.cache_path ? path4.isAbsolute(entry.cache_path) ? path4.resolve(entry.cache_path) : path4.resolve(path4.dirname(configPath), entry.cache_path) : null;
@@ -1065,8 +1077,8 @@ function createGitHubRemoteWorkspace() {
 function main() {
   const args = parseArgs(process.argv.slice(2));
   const paths = resolveGlobalPaths(args.homeDir);
-  const surfaceReportJson = path6.join(args.repoRoot, ".xgc", "validation", "surface-resolution.json");
-  const surfaceReportMd = path6.join(args.repoRoot, ".xgc", "validation", "surface-resolution.md");
+  const surfaceReportJson = path6.join(paths.configHome, "validation", "surface-resolution.json");
+  const surfaceReportMd = path6.join(paths.configHome, "validation", "surface-resolution.md");
   assert.ok(fs4.existsSync(paths.profileHome), `X for GitHub Copilot profile home is missing: ${paths.profileHome}`);
   assert.ok(fs4.existsSync(paths.configHome), `X for GitHub Copilot config home is missing: ${paths.configHome}`);
   assert.ok(fs4.existsSync(paths.profileConfigPath), `profile config is missing: ${paths.profileConfigPath}`);

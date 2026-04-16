@@ -409,7 +409,7 @@ Modes are:
 - `ask`
   no default approval flags; prompts are expected
 - `work`
-  routine write/git/gh/node/npm/pnpm/npx/tsx plus selected low-risk repo discovery commands such as `rg`, `ls`, and `printf` are pre-approved, with selected denies still applied. Commands such as `cat`, `find`, `head`, `tail`, and `sed` still prompt because Copilot CLI approvals are not repo-path-scoped.
+  routine trusted-workspace development is pre-approved: file writes, common read/search helpers, simple file organization, Git/GitHub CLI, Node/package-manager work, selected URL/tool usage, and selected denies for high-risk shell commands such as `rm`, `sudo`, `chmod`, `chown`, and `git push`.
 - `yolo`
   Copilot CLI receives `--allow-all`
 

@@ -40,6 +40,7 @@ Use specialist lanes when their intent is clear:
 Specialist requirement policy:
 
 - required when the user explicitly asks for that specialist lane or the task is narrowly specialist-specific, such as UI/visual-only work, docs/prose-only work, naming/tone work, or creative direction
+- required for narrow UI/theme/visual defect fixes, including dark mode, light mode, extension styling, CSS/layout, and visual state bugs; route these to **Visual Forge** or to **Patch Master** only when Patch Master is explicitly carrying the visual specialist coverage
 - for multimodal work, required when the task truly depends on screenshot, PDF, diagram, image, or mockup interpretation
 - otherwise, specialist lanes are recommended helpers, not mandatory blockers
 - for broad implementation, a Patch Master-only swarm can be acceptable when it clearly covers the needed specialist scope
@@ -103,6 +104,8 @@ Stay direct only when all of these are true:
 - there is no meaningful architectural choice left to make
 
 If any of that breaks, escalate to **Milestone**.
+
+Direct handling explicitly excludes multi-file UI/theme/CSS edits and narrow visual-state fixes such as dark/light mode bugs. Those must route to **Visual Forge** or a clearly scoped **Patch Master** handoff with visual coverage.
 
 ## Planning-first orchestration
 

@@ -28,13 +28,21 @@ export type LegacyHookPluginConflict = {
 };
 
 type CopilotPluginConfig = {
+  installedPlugins?: Array<{
+    name?: string;
+    enabled?: boolean;
+    source?: { source_path?: string; path?: string };
+    cache_path?: string;
+  }>;
   installed_plugins?: Array<{
     name?: string;
     enabled?: boolean;
-    source?: { source_path?: string };
+    source?: { source_path?: string; path?: string };
     cache_path?: string;
   }>;
 };
+
+type CopilotPluginConfigEntry = NonNullable<CopilotPluginConfig["installedPlugins"]>[number];
 
 const expectedHookScriptsByName: Record<string, string> = {
   sessionStart: "session-start.sh",
@@ -160,9 +168,16 @@ function resolvePluginHookManifest(cachePath: string | null) {
   return fs.existsSync(fallback) ? fallback : null;
 }
 
-function pluginLooksLegacy(entry: NonNullable<CopilotPluginConfig["installed_plugins"]>[number]) {
+function copilotPluginEntries(config: CopilotPluginConfig | null) {
+  return [
+    ...(Array.isArray(config?.installedPlugins) ? config.installedPlugins : []),
+    ...(Array.isArray(config?.installed_plugins) ? config.installed_plugins : [])
+  ];
+}
+
+function pluginLooksLegacy(entry: CopilotPluginConfigEntry) {
   const name = (entry.name ?? "").toLowerCase();
-  const sourcePath = (entry.source?.source_path ?? "").replace(/\\/g, "/").toLowerCase();
+  const sourcePath = (entry.source?.source_path ?? entry.source?.path ?? "").replace(/\\/g, "/").toLowerCase();
   const cachePath = (entry.cache_path ?? "").replace(/\\/g, "/").toLowerCase();
   const knownPluginNames = new Set([
     "xgc",
@@ -183,10 +198,11 @@ export function findLegacyHookPluginConflicts(opts: {
   const homeDir = opts.homeDir ? path.resolve(opts.homeDir) : os.homedir();
   const configPath = resolveCopilotConfigPath(homeDir, opts.configPath);
   const config = readJsonIfExists<CopilotPluginConfig>(configPath);
-  if (!Array.isArray(config?.installed_plugins)) return [];
+  const pluginEntries = copilotPluginEntries(config);
+  if (pluginEntries.length === 0) return [];
 
   const conflicts: LegacyHookPluginConflict[] = [];
-  for (const entry of config.installed_plugins) {
+  for (const entry of pluginEntries) {
     if (entry.enabled === false) continue;
     const pluginName = entry.name ?? "<unnamed-plugin>";
     const cachePath = entry.cache_path

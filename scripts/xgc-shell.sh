@@ -565,13 +565,32 @@ xgc__permission_flags() {
     work)
       printf '%s\n' \
         "--allow-tool=write" \
+        "--allow-tool=shell(pwd)" \
         "--allow-tool=shell(git:*)" \
         "--allow-tool=shell(gh:*)" \
         "--allow-tool=shell(printf:*)" \
+        "--allow-tool=shell(cat:*)" \
+        "--allow-tool=shell(sed:*)" \
+        "--allow-tool=shell(find:*)" \
+        "--allow-tool=shell(head:*)" \
+        "--allow-tool=shell(tail:*)" \
+        "--allow-tool=shell(wc:*)" \
+        "--allow-tool=shell(grep:*)" \
+        "--allow-tool=shell(awk:*)" \
+        "--allow-tool=shell(sort:*)" \
+        "--allow-tool=shell(uniq:*)" \
+        "--allow-tool=shell(cut:*)" \
+        "--allow-tool=shell(jq:*)" \
+        "--allow-tool=shell(mkdir:*)" \
+        "--allow-tool=shell(touch:*)" \
+        "--allow-tool=shell(cp:*)" \
+        "--allow-tool=shell(mv:*)" \
         "--allow-tool=shell(node:*)" \
         "--allow-tool=shell(npm:*)" \
         "--allow-tool=shell(pnpm:*)" \
         "--allow-tool=shell(npx:*)" \
+        "--allow-tool=shell(yarn:*)" \
+        "--allow-tool=shell(bun:*)" \
         "--allow-tool=shell(tsx:*)" \
         "--allow-tool=shell(rg:*)" \
         "--allow-tool=shell(ls:*)" \
@@ -581,6 +600,13 @@ xgc__permission_flags() {
         "--allow-url=docs.github.com" \
         "--allow-url=raw.githubusercontent.com" \
         "--deny-tool=shell(rm)" \
+        "--deny-tool=shell(rm:*)" \
+        "--deny-tool=shell(sudo)" \
+        "--deny-tool=shell(sudo:*)" \
+        "--deny-tool=shell(chmod)" \
+        "--deny-tool=shell(chmod:*)" \
+        "--deny-tool=shell(chown)" \
+        "--deny-tool=shell(chown:*)" \
         "--deny-tool=shell(git push)"
       ;;
     yolo)
@@ -1277,10 +1303,10 @@ xgc__maybe_background_update() {
       return 0
       ;;
     check)
-      xgc__spawn_detached node "$updater" --home-dir "$HOME" --check --if-due --quiet
+      xgc__spawn_detached node "$updater" --home-dir "$HOME" --config-home "$XGC_COPILOT_CONFIG_HOME" --check --if-due --quiet
       ;;
     apply)
-      xgc__spawn_detached node "$updater" --home-dir "$HOME" --if-due --quiet
+      xgc__spawn_detached node "$updater" --home-dir "$HOME" --config-home "$XGC_COPILOT_CONFIG_HOME" --if-due --quiet
       ;;
   esac
 }
