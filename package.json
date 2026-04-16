@@ -4,6 +4,14 @@
   "private": false,
   "license": "MIT",
   "description": "X for GitHub Copilot: planning-first integration orchestration and runtime truth for GitHub Copilot CLI workflows.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Juhwa-Lee1023/x-for-github-copilot.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Juhwa-Lee1023/x-for-github-copilot/issues"
+  },
+  "homepage": "https://github.com/Juhwa-Lee1023/x-for-github-copilot#readme",
   "type": "module",
   "bin": {
     "x-for-github-copilot": "bin/xgc.mjs"

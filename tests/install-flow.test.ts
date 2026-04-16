@@ -157,12 +157,21 @@ test("packaged npm bundle contains the runtime files needed for npx install", ()
 test("package runtime dependencies stay empty while build tooling remains dev-only", () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, "package.json"), "utf8")) as {
     bin?: Record<string, string>;
+    bugs?: { url?: string };
     dependencies?: Record<string, string>;
     devDependencies?: Record<string, string>;
+    homepage?: string;
+    repository?: { type?: string; url?: string };
     scripts?: Record<string, string>;
   };
 
   assert.deepEqual(pkg.bin, { "x-for-github-copilot": "bin/xgc.mjs" });
+  assert.deepEqual(pkg.repository, {
+    type: "git",
+    url: "git+https://github.com/Juhwa-Lee1023/x-for-github-copilot.git"
+  });
+  assert.equal(pkg.bugs?.url, "https://github.com/Juhwa-Lee1023/x-for-github-copilot/issues");
+  assert.equal(pkg.homepage, "https://github.com/Juhwa-Lee1023/x-for-github-copilot#readme");
   assert.deepEqual(pkg.dependencies ?? {}, {});
   assert.equal(pkg.devDependencies?.tsx, "^4.20.5");
   assert.equal(pkg.devDependencies?.esbuild, "^0.25.11");
