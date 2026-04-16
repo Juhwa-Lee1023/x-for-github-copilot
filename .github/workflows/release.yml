@@ -3,6 +3,7 @@ name: Release
 on:
   push:
     tags:
+      - "*.*.*"
       - "v*.*.*"
 
 permissions:
@@ -23,7 +24,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
           registry-url: https://registry.npmjs.org
 
@@ -70,11 +71,9 @@ jobs:
             --output-dir release-assets \
             --npm-package-sha256 "$PACKAGE_SHA"
 
-      - name: Publish npm package
+      - name: Publish npm package with trusted publishing
         if: steps.npm_status.outputs.already_published != 'true'
         run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
