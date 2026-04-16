@@ -1,6 +1,6 @@
 # Setup For Coding Agents
 
-If you are installing X for GitHub Copilot for a user, do not start with this repo-checkout script. Fetch the user install guide and follow its LLM-agent section:
+If you are installing X for GitHub Copilot for a user, do not start with this repo-checkout script. Fetch the user install guide with `curl`, not WebFetch, and follow its LLM-agent section:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Juhwa-Lee1023/x-for-github-copilot/refs/heads/main/docs/install.md

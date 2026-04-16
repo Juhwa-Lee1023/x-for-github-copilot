@@ -363,15 +363,29 @@ test("release manifest records the prebuilt runtime tarball contract", () => {
 
   assert.equal(result.status, 0, result.stderr);
   const manifest = JSON.parse(fs.readFileSync(path.join(outputDir, "release-manifest.json"), "utf8")) as {
+    agentInstallCommand?: string;
+    installCommand?: string;
     tarballUrl: string;
     npmPackageSha256: string;
     installedRuntime?: { prebuilt?: boolean; requiresNpmInstall?: boolean; runtimeDistDir?: string };
   };
+  assert.equal(manifest.installCommand, "npx x-for-github-copilot install");
+  assert.equal(
+    manifest.agentInstallCommand,
+    "npx --yes x-for-github-copilot install --permission-mode <mode> --reasoning-effort xhigh --reasoning-effort-cap high"
+  );
   assert.equal(manifest.tarballUrl, "https://github.com/owner/repo/releases/download/v9.8.7/x-for-github-copilot-9.8.7.tgz");
   assert.equal(manifest.npmPackageSha256, checksum);
   assert.equal(manifest.installedRuntime?.prebuilt, true);
   assert.equal(manifest.installedRuntime?.requiresNpmInstall, false);
   assert.equal(manifest.installedRuntime?.runtimeDistDir, "runtime-dist");
+});
+
+test("xgc updater preserves persisted reasoning settings when applying releases", () => {
+  const updater = fs.readFileSync(path.join(repoRoot, "scripts", "xgc-update.mjs"), "utf8");
+
+  assert.match(updater, /"--reasoning-effort",\s*installState\.reasoningEffort \|\| "xhigh"/);
+  assert.match(updater, /"--reasoning-effort-cap",\s*installState\.reasoningEffortCap \|\| "high"/);
 });
 
 test("runtime-dist generation is checked into source and strips installed-runtime tsx loaders", () => {
@@ -1933,6 +1947,45 @@ test("materialize global script defaults invalid env permission mode to ask", ()
   ) as { permissionMode?: string };
   assert.match(profileEnv, /XGC_PERMISSION_MODE='ask'/);
   assert.equal(installState.permissionMode, "ask");
+});
+
+test("materialize global script accepts equals-form reasoning effort flags", () => {
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "xgc-materialize-effort-equals-"));
+  const result = spawnSync(
+    "npm",
+    [
+      "run",
+      "--silent",
+      "materialize:global",
+      "--",
+      "--home-dir",
+      tempHome,
+      "--repo-root",
+      repoRoot,
+      "--reasoning-effort=off",
+      "--reasoning-effort-cap=medium"
+    ],
+    {
+      cwd: repoRoot,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        XGC_REASONING_EFFORT: "",
+        XGC_REASONING_EFFORT_CAP: ""
+      }
+    }
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /reasoning effort: off/);
+  assert.match(result.stdout, /reasoning effort cap: medium/);
+  const profileEnv = fs.readFileSync(path.join(tempHome, ".config", "xgc", "profile.env"), "utf8");
+  const profileConfig = JSON.parse(fs.readFileSync(path.join(tempHome, ".copilot-xgc", "config.json"), "utf8")) as {
+    effortLevel?: string;
+  };
+  assert.match(profileEnv, /XGC_REASONING_EFFORT='off'/);
+  assert.match(profileEnv, /XGC_REASONING_EFFORT_CAP='medium'/);
+  assert.equal(profileConfig.effortLevel, undefined);
 });
 
 test("materialize global script resolves and preserves the raw Copilot binary without requiring an env override", () => {

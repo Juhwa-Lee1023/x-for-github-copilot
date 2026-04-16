@@ -382,9 +382,11 @@ function ensureDedicatedProfilePluginRegistration(opts: {
     return opts.profileConfig;
   }
 
-  const pluginJson = readJsonIfExists<{ name?: string; version?: string }>(cachedPluginJsonPath);
+  const cachedPluginJson = readJsonIfExists<{ name?: string; version?: string }>(cachedPluginJsonPath);
+  const sourcePluginJson = readJsonIfExists<{ name?: string; version?: string }>(path.join(opts.repoRoot, "plugin.json"));
   const repoVersion = readRepoPackageVersion(opts.repoRoot);
-  const pluginName = pluginJson?.name ?? "xgc";
+  const pluginName = sourcePluginJson?.name ?? cachedPluginJson?.name ?? "xgc";
+  const pluginVersion = sourcePluginJson?.version ?? repoVersion ?? cachedPluginJson?.version;
   const existingRegistrations = Array.isArray(opts.profileConfig.installed_plugins)
     ? (opts.profileConfig.installed_plugins.filter((entry) => !samePluginRegistration(entry, pluginName, opts.repoRoot)) as CopilotPluginRegistration[])
     : [];
@@ -402,7 +404,7 @@ function ensureDedicatedProfilePluginRegistration(opts: {
         ...(existing ?? {}),
         name: pluginName,
         marketplace: existing?.marketplace ?? "",
-        version: pluginJson?.version ?? existing?.version ?? repoVersion,
+        version: pluginVersion ?? existing?.version,
         installed_at: existing?.installed_at ?? new Date().toISOString(),
         enabled: true,
         cache_path: cachePath,
@@ -427,6 +429,7 @@ export function buildGlobalProfileConfig(opts: {
 
   delete source.installed_plugins;
   delete source.model;
+  delete source.effortLevel;
 
   const existingInstalledPlugins = Array.isArray(opts.existingProfileConfig?.installed_plugins)
     ? opts.existingProfileConfig?.installed_plugins.filter((entry) => !filtersLegacyInstalledPlugin(entry))

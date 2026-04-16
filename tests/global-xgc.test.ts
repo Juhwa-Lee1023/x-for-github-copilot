@@ -268,6 +268,10 @@ function createGitHubRemoteWorkspace(ownerRepo = "example/xgc") {
   return workspace;
 }
 
+function packageVersion() {
+  return (JSON.parse(fs.readFileSync(path.join(repoRoot, "package.json"), "utf8")) as { version: string }).version;
+}
+
 type HookManifest = {
   hooks?: Record<string, Array<{ type?: string; bash?: string }>>;
 };
@@ -385,8 +389,8 @@ test("writeGlobalInstallState records update track and policy metadata", () => {
   });
 
   const installState = JSON.parse(fs.readFileSync(paths.installStatePath, "utf8")) as Record<string, unknown>;
-  assert.equal(installState.version, "0.1.0");
-  assert.equal(installState.releaseTag, "v0.1.0");
+  assert.equal(installState.version, packageVersion());
+  assert.equal(installState.releaseTag, `v${packageVersion()}`);
   assert.equal(installState.updateTrack, "0.1");
   assert.equal(installState.updatePolicy, "patch-within-track");
   assert.equal(installState.autoUpdateMode, "check");
@@ -687,6 +691,26 @@ test("materializeGlobalProfile drops existing active profile root model for TUI-
   assert.equal(frontmatterModel(path.join(result.paths.profileAgentsDir, "repo-scout.agent.md")), "gpt-5.4-mini");
 });
 
+test("materializeGlobalProfile removes stale profile effort level when reasoning effort is disabled", async () => {
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "xgc-global-effort-off-"));
+  const tempRepo = createMinimalRepoFixture();
+  const profileHome = path.join(tempHome, ".copilot-xgc");
+  fs.mkdirSync(profileHome, { recursive: true });
+  fs.writeFileSync(
+    path.join(profileHome, "config.json"),
+    JSON.stringify({ effortLevel: "high", trusted_folders: ["/tmp/old"] }, null, 2)
+  );
+
+  const result = await materializeGlobalProfile({ repoRoot: tempRepo, homeDir: tempHome, reasoningEffort: "off" });
+  const profileConfig = JSON.parse(fs.readFileSync(result.configPath, "utf8")) as {
+    effortLevel?: string;
+    trusted_folders?: string[];
+  };
+
+  assert.equal(profileConfig.effortLevel, undefined);
+  assert.ok(profileConfig.trusted_folders?.includes(tempRepo));
+});
+
 test("materializeGlobalProfile preserves existing XGC auth metadata when raw config is absent", async () => {
   const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "xgc-global-preserve-auth-"));
   const tempRepo = createMinimalRepoFixture();
@@ -770,6 +794,24 @@ test("materializeGlobalProfile recovers local plugin registration when a dedicat
   assert.equal(profileConfig.installed_plugins?.[0]?.enabled, true);
   assert.equal(profileConfig.installed_plugins?.[0]?.cache_path, profilePluginCache);
   assert.deepEqual(profileConfig.installed_plugins?.[0]?.source, { source: "local", path: tempRepo });
+});
+
+test("materializeGlobalProfile refreshes plugin registration version from the source manifest", async () => {
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "xgc-global-refresh-plugin-version-"));
+  const tempRepo = createMinimalRepoFixture();
+  const profilePluginCache = path.join(tempHome, ".copilot-xgc", "installed-plugins", "_direct", path.basename(tempRepo));
+  fs.mkdirSync(profilePluginCache, { recursive: true });
+  fs.writeFileSync(path.join(tempRepo, "plugin.json"), JSON.stringify({ name: "xgc", version: "0.1.1" }, null, 2));
+  fs.writeFileSync(path.join(tempRepo, "package.json"), JSON.stringify({ name: "x-for-github-copilot", version: "0.1.1" }, null, 2));
+  fs.writeFileSync(path.join(profilePluginCache, "plugin.json"), JSON.stringify({ name: "xgc", version: "0.1.0" }, null, 2));
+
+  const result = await materializeGlobalProfile({ repoRoot: tempRepo, homeDir: tempHome });
+  const profileConfig = JSON.parse(fs.readFileSync(result.configPath, "utf8")) as {
+    installed_plugins?: Array<{ name?: string; version?: string }>;
+  };
+
+  assert.equal(profileConfig.installed_plugins?.[0]?.name, "xgc");
+  assert.equal(profileConfig.installed_plugins?.[0]?.version, "0.1.1");
 });
 
 test("materializeGlobalProfile drops active root model instead of injecting it into runtime config", async () => {
