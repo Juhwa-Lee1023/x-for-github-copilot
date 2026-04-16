@@ -415,8 +415,11 @@ test("release workflow publishes the npm package and guards tag/package/runtime 
   assert.match(workflow, /already_published=true/);
   assert.match(workflow, /mkdir -p release-assets/);
   assert.match(workflow, /if: steps\.npm_status\.outputs\.already_published != 'true'/);
+  assert.match(workflow, /id-token: write/);
+  assert.match(workflow, /node-version: 24/);
+  assert.match(workflow, /Publish npm package with trusted publishing/);
   assert.match(workflow, /npm publish --provenance --access public/);
-  assert.match(workflow, /NODE_AUTH_TOKEN/);
+  assert.doesNotMatch(workflow, /NODE_AUTH_TOKEN/);
 });
 
 test("session bundle report synthesizes SESSION_RESULTS and SESSION_MATRIX without packaging", () => {
