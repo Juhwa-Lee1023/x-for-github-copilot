@@ -27,6 +27,7 @@ import {
   inspectInstalledPlugin,
   listCommittedFilesBetween,
   pluginListedInOutput,
+  readJsonIfExists,
   withCommittedRepoFiles
 } from "../scripts/lib/runtime-validation.js";
 import {
@@ -36,6 +37,30 @@ import {
   resolveGitHubProbePolicy,
   resolveGitHubProbeRepoIdentity
 } from "../scripts/lib/github-probe-gating.js";
+
+test("readJsonIfExists accepts Copilot config files with JSON comments", () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "xgc-jsonc-read-"));
+  const configPath = path.join(tempDir, "config.json");
+  fs.writeFileSync(
+    configPath,
+    [
+      "// User settings belong in settings.json.",
+      "/* Managed by Copilot CLI. */",
+      "{",
+      '  "model": "gpt-5.4",',
+      '  "url": "https://example.com/not-a-comment",',
+      '  "escaped": "quote: \\" // still string"',
+      "}",
+      ""
+    ].join("\n")
+  );
+
+  assert.deepEqual(readJsonIfExists(configPath), {
+    model: "gpt-5.4",
+    url: "https://example.com/not-a-comment",
+    escaped: 'quote: " // still string'
+  });
+});
 
 test("extractCliReportedUsage parses Copilot result-event usage", () => {
   const stdout = [

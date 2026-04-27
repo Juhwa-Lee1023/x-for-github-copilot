@@ -2,19 +2,30 @@
 
 If a user pasted you the README setup prompt, first determine whether you are already running inside GitHub Copilot CLI.
 
-- If you are already inside a raw Copilot TUI session, minimize approvals by running the one-shot package install first. Do not start by cloning this repo or running exploratory `curl`, `ls`, `cat`, `plugin list`, or `doctor` calls.
+- If you are already inside a raw Copilot TUI session, ask the user which XGC permission mode to persist before installing. Do not start by cloning this repo or running exploratory `curl`, `ls`, `cat`, `plugin list`, or `doctor` calls.
 - If you are another coding agent such as Codex, Claude Code, Cursor, or AmpCode, first check whether GitHub Copilot CLI exists with `copilot --version`.
 - If `copilot --version` is missing or fails because the command is not installed, install GitHub Copilot CLI using GitHub's official instructions: https://docs.github.com/en/copilot/how-tos/set-up/install-copilot-cli
 - After Copilot CLI is installed, help the user complete GitHub Copilot CLI authentication. Do not claim XGC is installed until plain `copilot` can open or report a usable authenticated CLI state.
-- Then install XGC with the low-approval command below.
+- Then install XGC with the selected permission mode.
 
-Default low-approval install:
+Ask this before installing:
 
-```bash
-npx --yes x-for-github-copilot install --permission-mode work --reasoning-effort xhigh --reasoning-effort-cap high && npx --yes x-for-github-copilot doctor
+```text
+Which default XGC permission mode should I use?
+- ask: Copilot prompts normally.
+- work: recommended for normal trusted development; reduces routine approvals without full allow-all.
+- yolo: fully unattended allow-all mode.
 ```
 
-Use `work` unless the user explicitly chooses `ask` or `yolo`.
+Do not choose a mode without the user's answer. If the user explicitly says to use the recommended/default mode, use `work`.
+
+Non-interactive install after the user chooses:
+
+```bash
+npx --yes x-for-github-copilot install --permission-mode <ask|work|yolo> --reasoning-effort xhigh --reasoning-effort-cap high && npx --yes x-for-github-copilot doctor
+```
+
+Use the exact selected mode in place of `<ask|work|yolo>`.
 
 After install and verification succeed, keep the final user-facing message short:
 
@@ -35,7 +46,7 @@ For detailed or recovery installs, fetch the user install guide with `curl`, not
 curl -fsSL https://raw.githubusercontent.com/Juhwa-Lee1023/x-for-github-copilot/refs/heads/main/docs/install.md
 ```
 
-If you use the detailed path, ask the user for `ask`, `work`, or `yolo`, and recommend `work` for normal trusted development because it reduces routine approvals without using full `--allow-all`. Then use `npx --yes x-for-github-copilot install --permission-mode <mode> --reasoning-effort xhigh --reasoning-effort-cap high` and verify with `npx --yes x-for-github-copilot doctor` plus a fresh shell. Keep `--yes` before the package name; it answers npm/npx package-install confirmation and does not choose the XGC permission mode. Keep the safe `high` cap unless the user explicitly says their Copilot account supports `xhigh`.
+If you use the detailed path, ask the user for `ask`, `work`, or `yolo`, and recommend `work` for normal trusted development because it reduces routine approvals without using full `--allow-all`. Do not choose `work` unless the user explicitly agrees or asks for the recommended/default mode. Then use `npx --yes x-for-github-copilot install --permission-mode <mode> --reasoning-effort xhigh --reasoning-effort-cap high` and verify with `npx --yes x-for-github-copilot doctor` plus a fresh shell. Keep `--yes` before the package name; it answers npm/npx package-install confirmation and does not choose the XGC permission mode. Keep the safe `high` cap unless the user explicitly says their Copilot account supports `xhigh`.
 
 If you are a coding agent bootstrapping this repository checkout for development, use this exact sequence:
 

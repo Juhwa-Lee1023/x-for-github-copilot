@@ -19,7 +19,7 @@ const agentInstallPrompt = [
   "Install and configure X for GitHub Copilot by following this guide:",
   "https://raw.githubusercontent.com/Juhwa-Lee1023/x-for-github-copilot/refs/heads/main/docs/setup-for-agents.md",
   "",
-  "If this is not already a GitHub Copilot CLI session, first run `copilot --version`. If Copilot CLI is missing, install GitHub Copilot CLI using GitHub's official instructions and help me authenticate it. Then install XGC with the lowest-approval path and verify a fresh shell opens plain `copilot`."
+  "If this is not already a GitHub Copilot CLI session, first run `copilot --version`. If Copilot CLI is missing, install GitHub Copilot CLI using GitHub's official instructions and help me authenticate it. Before installing XGC, ask me which permission mode to use: `ask`, `work`, or `yolo`. Recommend `work` for normal trusted development, but do not choose it unless I explicitly agree. Install XGC with my chosen mode and verify a fresh shell opens plain `copilot`."
 ].join("\n");
 
 test("README stays concise while preserving install, support, and lineage boundaries", () => {
@@ -43,7 +43,7 @@ test("README stays concise while preserving install, support, and lineage bounda
   assert.match(readme, /https:\/\/raw\.githubusercontent\.com\/Juhwa-Lee1023\/x-for-github-copilot\/refs\/heads\/main\/docs\/install\.md/i);
   assert.match(readme, /https:\/\/raw\.githubusercontent\.com\/Juhwa-Lee1023\/x-for-github-copilot\/refs\/heads\/main\/docs\/setup-for-agents\.md/i);
   assert.match(readme, /use `curl` to fetch the installation guide, not WebFetch/i);
-  assert.match(readme, /lowest-approval install path/i);
+  assert.match(readme, /ask the user which permission mode to persist/i);
   assert.match(readme, /If you are not inside Copilot CLI, first check `copilot --version`/i);
   assert.match(readme, /npx --yes x-for-github-copilot install --permission-mode work --reasoning-effort xhigh --reasoning-effort-cap high && npx --yes x-for-github-copilot doctor/i);
   assert.match(readme, /`--yes` before the package name/i);
@@ -71,8 +71,9 @@ test("agent install prompt stays synchronized across human and agent setup docs"
   assert.match(setupForAgents, /first check whether GitHub Copilot CLI exists with `copilot --version`/i);
   assert.match(setupForAgents, /https:\/\/docs\.github\.com\/en\/copilot\/how-tos\/set-up\/install-copilot-cli/i);
   assert.match(setupForAgents, /help the user complete GitHub Copilot CLI authentication/i);
-  assert.match(setupForAgents, /one-shot package install first/i);
-  assert.match(setupForAgents, /npx --yes x-for-github-copilot install --permission-mode work --reasoning-effort xhigh --reasoning-effort-cap high && npx --yes x-for-github-copilot doctor/i);
+  assert.match(setupForAgents, /Which default XGC permission mode should I use\?/i);
+  assert.match(setupForAgents, /Do not choose a mode without the user's answer/i);
+  assert.match(setupForAgents, /npx --yes x-for-github-copilot install --permission-mode <ask\|work\|yolo> --reasoning-effort xhigh --reasoning-effort-cap high && npx --yes x-for-github-copilot doctor/i);
   assert.match(setupForAgents, /For detailed or recovery installs, fetch the user install guide with `curl`, not WebFetch/i);
 });
 

@@ -451,6 +451,27 @@ test("xgc CLI help advertises npx-first install flow", () => {
   assert.match(result.stdout, /xgc uninstall --disable-only/);
 });
 
+test("xgc subcommand help is side-effect free", () => {
+  for (const command of ["install", "doctor", "update", "uninstall", "status"]) {
+    const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), `xgc-${command}-help-home-`));
+    const result = spawnSync("node", [path.join(repoRoot, "bin", "xgc.mjs"), command, "--help"], {
+      cwd: repoRoot,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        HOME: tempHome,
+        XGC_SKIP_SELF_DISPATCH: "1"
+      }
+    });
+
+    assert.equal(result.status, 0, `${command} --help failed\n${result.stderr}`);
+    assert.match(result.stdout, new RegExp(`Usage: x-for-github-copilot ${command}`));
+    assert.equal(fs.existsSync(path.join(tempHome, ".copilot-xgc")), false, `${command} --help created profile state`);
+    assert.equal(fs.existsSync(path.join(tempHome, ".config", "xgc")), false, `${command} --help created config state`);
+    assert.equal(fs.existsSync(path.join(tempHome, ".local", "share", "xgc")), false, `${command} --help created runtime state`);
+  }
+});
+
 test("release manifest records the prebuilt runtime tarball contract", () => {
   const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "xgc-release-manifest-"));
   const checksum = "a".repeat(64);

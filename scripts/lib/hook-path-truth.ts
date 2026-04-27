@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { readJsonWithCommentsIfExists } from "./jsonc.js";
 
 export type HookCommandEvidence = {
   hookName: string;
@@ -59,9 +60,8 @@ const workspaceShellHookCommandPattern =
   /(?:^|[\s"'`])(?:bash\s+)?(?:\.\/)?scripts\/(?:hooks\/)?(?:pre-tool-use|session-start|agent-stop|subagent-stop|error-occurred)\.sh\b/i;
 
 function readJsonIfExists<T>(filePath: string): T | null {
-  if (!fs.existsSync(filePath)) return null;
   try {
-    return JSON.parse(fs.readFileSync(filePath, "utf8")) as T;
+    return readJsonWithCommentsIfExists<T>(filePath);
   } catch {
     return null;
   }

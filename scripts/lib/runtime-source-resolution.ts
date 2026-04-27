@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { parseJsonWithComments } from "./jsonc.js";
 import { AGENT_MODEL_POLICIES, normalizeRootModel, resolveAgentModelPolicy } from "./model-policy.js";
 import { listCanonicalAgentIdsSync, listCanonicalSkillIdsSync } from "./runtime-surfaces.js";
 
@@ -230,7 +231,7 @@ function readFrontmatterMetadata(filePath: string) {
 function readCopilotRootModel(configPath: string | null | undefined) {
   if (!configPath || !fs.existsSync(configPath)) return normalizeRootModel(null);
   try {
-    const parsed = JSON.parse(fs.readFileSync(configPath, "utf8")) as { model?: unknown };
+    const parsed = parseJsonWithComments<{ model?: unknown }>(fs.readFileSync(configPath, "utf8"));
     return normalizeRootModel(parsed.model);
   } catch {
     return normalizeRootModel(null);
