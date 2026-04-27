@@ -76,10 +76,60 @@ function readJsonIfExists(filePath) {
     return {};
   }
   try {
-    return JSON.parse(fs.readFileSync(filePath, "utf8"));
+    return JSON.parse(stripJsonComments(fs.readFileSync(filePath, "utf8")));
   } catch {
     return {};
   }
+}
+function stripJsonComments(input) {
+  let output = "";
+  let inString = false;
+  let escaped = false;
+  let inLineComment = false;
+  let inBlockComment = false;
+  for (let index = 0; index < input.length; index += 1) {
+    const current = input[index];
+    const next = input[index + 1];
+    if (inLineComment) {
+      if (current === "\n" || current === "\r") {
+        inLineComment = false;
+        output += current;
+      }
+      continue;
+    }
+    if (inBlockComment) {
+      if (current === "\n" || current === "\r") output += current;
+      if (current === "*" && next === "/") {
+        inBlockComment = false;
+        index += 1;
+      }
+      continue;
+    }
+    if (inString) {
+      output += current;
+      if (escaped) escaped = false;
+      else if (current === "\\") escaped = true;
+      else if (current === '"') inString = false;
+      continue;
+    }
+    if (current === '"') {
+      inString = true;
+      output += current;
+      continue;
+    }
+    if (current === "/" && next === "/") {
+      inLineComment = true;
+      index += 1;
+      continue;
+    }
+    if (current === "/" && next === "*") {
+      inBlockComment = true;
+      index += 1;
+      continue;
+    }
+    output += current;
+  }
+  return output;
 }
 function loginOnlyConfig(rawConfigPath) {
   const raw = readJsonIfExists(rawConfigPath);

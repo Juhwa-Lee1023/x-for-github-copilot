@@ -359,6 +359,73 @@ function printHelp() {
   );
 }
 
+function hasHelpFlag(argv) {
+  return argv.includes("--help") || argv.includes("-h");
+}
+
+function printCommandHelp(command) {
+  const usageByCommand = {
+    install: [
+      `Usage: ${packageName} install [options]`,
+      "",
+      "Install/materialize XGC and seed the installed runtime store.",
+      "",
+      "Options:",
+      "  --home-dir <path>                 Use an alternate home directory",
+      "  --permission-mode <ask|work|yolo> Persist the default Copilot permission mode",
+      "  --reasoning-effort <level>        Request a Copilot reasoning effort for XGC sessions",
+      "  --reasoning-effort-cap <level>    Cap injected reasoning effort for account safety",
+      "  --release-tag <version>           Record the runtime release tag",
+      "  --no-write-shell-profile          Do not modify shell startup files",
+      "",
+      "Examples:",
+      `  npx ${packageName} install`,
+      `  npx ${packageName} install --permission-mode work --reasoning-effort xhigh --reasoning-effort-cap high`
+    ],
+    doctor: [
+      `Usage: ${packageName} doctor [options]`,
+      "",
+      "Run global/profile validation against the installed runtime.",
+      "",
+      "Options:",
+      "  --home-dir <path>           Use an alternate home directory",
+      "  --allow-legacy-plugins      Report, rather than fail, enabled legacy hook plugin conflicts"
+    ],
+    update: [
+      `Usage: ${packageName} update [options]`,
+      "",
+      "Check or apply the latest compatible release into the runtime store.",
+      "",
+      "Options:",
+      "  --check                     Check only; do not apply an update",
+      "  --home-dir <path>           Use an alternate home directory",
+      "  --repo <owner/repo>         Override the GitHub release repository"
+    ],
+    uninstall: [
+      `Usage: ${packageName} uninstall [options]`,
+      "",
+      "Disable or remove the installed XGC profile.",
+      "",
+      "Options:",
+      "  --home-dir <path>           Use an alternate home directory",
+      "  --disable-only              Disable shell activation without removing runtime files",
+      "  --purge                     Remove installed XGC runtime/profile files"
+    ],
+    status: [
+      `Usage: ${packageName} status`,
+      "",
+      "Print the current install-state summary."
+    ]
+  };
+
+  const lines = usageByCommand[command];
+  if (!lines) {
+    return false;
+  }
+  process.stdout.write(`${lines.join("\n")}\n`);
+  return true;
+}
+
 function printStatus() {
   const paths = resolvePaths(os.homedir());
   const installState = readInstallState();
@@ -379,6 +446,15 @@ function printStatus() {
 const args = process.argv.slice(2);
 const command = args[0] ?? "help";
 const rest = args.slice(1);
+
+if (command === "help" || command === "--help" || command === "-h") {
+  printHelp();
+  process.exit(0);
+}
+
+if (hasHelpFlag(rest) && printCommandHelp(command)) {
+  process.exit(0);
+}
 
 if (maybeDispatchToInstalledRuntime(command, rest)) {
   process.exit(0);

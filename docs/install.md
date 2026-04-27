@@ -18,7 +18,7 @@ Paste this into your LLM agent session:
 Install and configure X for GitHub Copilot by following this guide:
 https://raw.githubusercontent.com/Juhwa-Lee1023/x-for-github-copilot/refs/heads/main/docs/setup-for-agents.md
 
-If this is not already a GitHub Copilot CLI session, first run `copilot --version`. If Copilot CLI is missing, install GitHub Copilot CLI using GitHub's official instructions and help me authenticate it. Then install XGC with the lowest-approval path and verify a fresh shell opens plain `copilot`.
+If this is not already a GitHub Copilot CLI session, first run `copilot --version`. If Copilot CLI is missing, install GitHub Copilot CLI using GitHub's official instructions and help me authenticate it. Before installing XGC, ask me which permission mode to use: `ask`, `work`, or `yolo`. Recommend `work` for normal trusted development, but do not choose it unless I explicitly agree. Install XGC with my chosen mode and verify a fresh shell opens plain `copilot`.
 ```
 
 That prompt works both from a raw Copilot TUI and from another coding agent. If Copilot CLI is already running, the setup guide uses one shell approval for install + doctor instead of multiple approvals for exploratory checks. If Copilot CLI is not installed yet, the guide tells the agent to install and authenticate Copilot CLI first. Or run the interactive installer yourself:
@@ -238,18 +238,18 @@ During interactive install, X for GitHub Copilot asks which permission mode shou
 - `yolo`
   passes Copilot CLI's `--allow-all`; this is fully unattended and least safe
 
-For non-interactive install, X for GitHub Copilot falls back to `ask` unless you pass a mode explicitly. For agent-driven or OMO-style copy-paste install from a plain Copilot TUI, give the agent this lowest-approval prompt:
+For non-interactive install, X for GitHub Copilot falls back to `ask` unless you pass a mode explicitly. For agent-driven or OMO-style copy-paste install from a plain Copilot TUI, give the agent this prompt:
 
 ```text
 Install and configure X for GitHub Copilot by following this guide:
 https://raw.githubusercontent.com/Juhwa-Lee1023/x-for-github-copilot/refs/heads/main/docs/setup-for-agents.md
 
-If this is not already a GitHub Copilot CLI session, first run `copilot --version`. If Copilot CLI is missing, install GitHub Copilot CLI using GitHub's official instructions and help me authenticate it. Then install XGC with the lowest-approval path and verify a fresh shell opens plain `copilot`.
+If this is not already a GitHub Copilot CLI session, first run `copilot --version`. If Copilot CLI is missing, install GitHub Copilot CLI using GitHub's official instructions and help me authenticate it. Before installing XGC, ask me which permission mode to use: `ask`, `work`, or `yolo`. Recommend `work` for normal trusted development, but do not choose it unless I explicitly agree. Install XGC with my chosen mode and verify a fresh shell opens plain `copilot`.
 ```
 
-That prompt tells non-Copilot agents to install/authenticate Copilot CLI first, and tells raw Copilot TUI agents to use the one-shot XGC command from `docs/setup-for-agents.md`. The one-shot command avoids npm/npx's hidden package-install confirmation prompt, avoids the installer's permission-mode `read` prompt, and avoids extra raw Copilot approvals caused by exploratory `curl`, `ls`, `cat`, `plugin list`, or `doctor` calls split across multiple shell tool calls.
+That prompt tells non-Copilot agents to install/authenticate Copilot CLI first, and tells raw Copilot TUI agents to ask the user for the XGC permission mode before using the one-shot command from `docs/setup-for-agents.md`. The one-shot command avoids npm/npx's hidden package-install confirmation prompt, avoids the installer's permission-mode `read` prompt after the user has chosen the mode, and avoids extra raw Copilot approvals caused by exploratory `curl`, `ls`, `cat`, `plugin list`, or `doctor` calls split across multiple shell tool calls.
 
-If the user wants a different default mode, replace `--permission-mode work` with `ask` or `yolo` before running the one-shot command. `work` is the recommended default for normal trusted development.
+If the user asks for the recommended/default mode, use `--permission-mode work`. If the user chooses `ask` or `yolo`, use that mode instead. `work` is the recommended default for normal trusted development, but agents should not silently choose it without the user's answer.
 
 You can still run the installer directly when you already know the mode:
 

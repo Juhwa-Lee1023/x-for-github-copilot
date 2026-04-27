@@ -20,10 +20,10 @@ Paste this into your LLM agent session:
 Install and configure X for GitHub Copilot by following this guide:
 https://raw.githubusercontent.com/Juhwa-Lee1023/x-for-github-copilot/refs/heads/main/docs/setup-for-agents.md
 
-If this is not already a GitHub Copilot CLI session, first run `copilot --version`. If Copilot CLI is missing, install GitHub Copilot CLI using GitHub's official instructions and help me authenticate it. Then install XGC with the lowest-approval path and verify a fresh shell opens plain `copilot`.
+If this is not already a GitHub Copilot CLI session, first run `copilot --version`. If Copilot CLI is missing, install GitHub Copilot CLI using GitHub's official instructions and help me authenticate it. Before installing XGC, ask me which permission mode to use: `ask`, `work`, or `yolo`. Recommend `work` for normal trusted development, but do not choose it unless I explicitly agree. Install XGC with my chosen mode and verify a fresh shell opens plain `copilot`.
 ```
 
-This path works both from a raw Copilot TUI and from another coding agent such as Codex, Claude Code, Cursor, or AmpCode. If Copilot CLI is already running, the guide uses the lowest-approval install path. If Copilot CLI is not installed yet, the guide tells the agent to install and authenticate Copilot CLI first, then install XGC. Or read the [installation guide](docs/install.md), but the recommended path is to let an agent do it. Installation touches Copilot profile and shell startup files; agents are better at copying exact flags and verifying fresh-shell behavior.
+This path works both from a raw Copilot TUI and from another coding agent such as Codex, Claude Code, Cursor, or AmpCode. If Copilot CLI is already running, the guide asks which permission mode to persist before installing. If Copilot CLI is not installed yet, the guide tells the agent to install and authenticate Copilot CLI first, then install XGC. Or read the [installation guide](docs/install.md), but the recommended path is to let an agent do it. Installation touches Copilot profile and shell startup files; agents are better at copying exact flags and verifying fresh-shell behavior.
 
 Manual install:
 
@@ -41,7 +41,7 @@ bunx x-for-github-copilot install
 
 ### For LLM Agents
 
-If the user pasted the setup prompt above, fetch and follow `docs/setup-for-agents.md`. If you are already running inside GitHub Copilot CLI, use the one-shot install command from that guide before exploratory probes: `npx --yes x-for-github-copilot install --permission-mode work --reasoning-effort xhigh --reasoning-effort-cap high && npx --yes x-for-github-copilot doctor`. If you are not inside Copilot CLI, first check `copilot --version`; if Copilot CLI is missing, install it from GitHub's official Copilot CLI installation docs and help the user authenticate.
+If the user pasted the setup prompt above, fetch and follow `docs/setup-for-agents.md`. If you are already running inside GitHub Copilot CLI, ask the user which permission mode to persist before running the one-shot install command from that guide. If the user says to use the recommended/default mode, use `work`: `npx --yes x-for-github-copilot install --permission-mode work --reasoning-effort xhigh --reasoning-effort-cap high && npx --yes x-for-github-copilot doctor`. If you are not inside Copilot CLI, first check `copilot --version`; if Copilot CLI is missing, install it from GitHub's official Copilot CLI installation docs and help the user authenticate.
 
 For detailed or recovery installs, use `curl` to fetch the installation guide, not WebFetch. WebFetch can summarize away required flags and verification steps.
 

@@ -8,6 +8,7 @@ import {
   findLegacyHookPluginConflicts,
   formatLegacyHookPluginConflict
 } from "./lib/hook-path-truth.js";
+import { readJsonWithCommentsIfExists } from "./lib/jsonc.js";
 import { resolveRepoRoot } from "./lib/runtime-surfaces.js";
 
 type HookHandler = Record<string, unknown> & {
@@ -44,9 +45,8 @@ export type RawHookRepairResult = {
 };
 
 function readJsonIfExists<T>(filePath: string): T | null {
-  if (!fs.existsSync(filePath)) return null;
   try {
-    return JSON.parse(fs.readFileSync(filePath, "utf8")) as T;
+    return readJsonWithCommentsIfExists<T>(filePath);
   } catch {
     return null;
   }

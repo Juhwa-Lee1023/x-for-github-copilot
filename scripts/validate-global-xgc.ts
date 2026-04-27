@@ -4,7 +4,7 @@ import path from "node:path";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { inspectInstalledPlugin, pluginListedInOutput, writeText } from "./lib/runtime-validation.js";
+import { inspectInstalledPlugin, pluginListedInOutput, readJsonIfExists, writeText } from "./lib/runtime-validation.js";
 import { resolveGlobalPaths, shellQuote } from "./lib/global-xgc.js";
 import { normalizeRootModel, resolveAgentModelPolicy } from "./lib/model-policy.js";
 import {
@@ -274,7 +274,7 @@ function main() {
     'X for GitHub Copilot profile lsp.json must contain a root-level "lspServers" object'
   );
 
-  const profileConfig = JSON.parse(fs.readFileSync(paths.profileConfigPath, "utf8")) as { model?: string };
+  const profileConfig = readJsonIfExists<{ model?: string }>(paths.profileConfigPath) ?? {};
   const rootModel = normalizeRootModel(profileConfig.model);
   compareAgentMirror(path.join(args.repoRoot, "source", "agents"), paths.profileAgentsDir, rootModel, "profile agents");
   compareMirrors(path.join(args.repoRoot, "skills"), paths.profileSkillsDir, "profile skills");

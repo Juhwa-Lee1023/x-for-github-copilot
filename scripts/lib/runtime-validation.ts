@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
+import { readJsonWithCommentsIfExists } from "./jsonc.js";
 import {
   emptyGitHubProbeCache,
   resolveGitHubProbePolicy,
@@ -2553,10 +2554,7 @@ export function containsOrderedSubsequence(values: string[], expected: string[])
 }
 
 export function readJsonIfExists<T>(filePath: string): T | null {
-  if (!fs.existsSync(filePath)) {
-    return null;
-  }
-  return JSON.parse(fs.readFileSync(filePath, "utf8")) as T;
+  return readJsonWithCommentsIfExists<T>(filePath);
 }
 
 export function ensureDir(targetDir: string) {
